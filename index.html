@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎯 Face Turret v2.2</title>
+    <title>🎯 Face Turret v2.3</title>
     <style>
         :root { --bg:#0a0a0f; --panel:#151520; --accent:#00d4ff; --text:#e0e0e0; --ok:#00ff88; --warn:#ffaa00; --err:#ff4444; }
         * { margin:0; padding:0; box-sizing:border-box; }
@@ -48,7 +48,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>🎯 FACE TURRET v2.2</h1>
+        <h1>🎯 FACE TURRET v2.3</h1>
         <div class="status">
             <div class="dot" id="statusDot"></div>
             <span id="statusText">Старт...</span>
@@ -94,6 +94,9 @@
         <div id="debugLog"></div>
     </div>
 
+    <!-- ✅ ЗАГРУЗКА MEDIAPIPE ЧЕРЕЗ SCRIPT TAG -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.js"></script>
+    
     <script>
         // === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ===
         let config = JSON.parse(localStorage.getItem('turretCfg') || '{}');
@@ -155,7 +158,6 @@
             faceBadge.textContent = '🧪 ТЕСТ';
             faceBadge.style.color = '#ffaa00';
             log('🧪 Тестовый режим активирован', 'warn');
-            // Эмуляция данных
             setInterval(() => {
                 if(!testMode) return;
                 const t = Date.now() / 1000;
@@ -165,7 +167,6 @@
                 document.getElementById('valX').textContent = tx.toFixed(2);
                 document.getElementById('valY').textContent = ty.toFixed(2);
                 
-                // Визуализация
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 const cx = (tx + 0.5) * canvas.width;
                 const cy = (ty + 0.5) * canvas.height;
@@ -181,7 +182,7 @@
             }, 100);
         };
 
-        log('🚀 Face Turret v2.2 стартует...', 'ok');
+        log('🚀 Face Turret v2.3 стартует...', 'ok');
 
         // === КАМЕРА ===
         async function startCamera() {
@@ -215,22 +216,23 @@
 
         // === MEDIAPIPE — ИСПРАВЛЕННАЯ ВЕРСИЯ ===
         async function loadMediaPipe() {
-            updateLoading('Загрузка vision_bundle.mjs...');
-            log('🧠 Загрузка MediaPipe...');
+            updateLoading('Проверка MediaPipe...');
+            log('🧠 Инициализация MediaPipe...');
 
             try {
                 if (location.protocol === 'file:') {
                     throw new Error('⛔ Откройте через http://localhost');
                 }
 
-                // ✅ ПРАВИЛЬНЫЙ СПОСОБ: vision_bundle.mjs
-                await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs');
+                // ✅ ПРОВЕРКА: загрузился ли vision_bundle.js
+                if(typeof VisionTasks === 'undefined') {
+                    throw new Error('vision_bundle.js не загрузился. Проверьте интернет.');
+                }
+
+                log('✅ MediaPipe библиотека найдена', 'ok');
+                updateLoading('Создание детектора...');
                 
-                const { FaceDetector, FilesetResolver } = window.vision;
-                if(!FaceDetector) throw new Error('vision_bundle не загрузился');
-                
-                log('✅ Библиотека загружена', 'ok');
-                updateLoading('Инициализация WASM...');
+                const { FaceDetector, FilesetResolver } = VisionTasks;
                 
                 const filesetResolver = await FilesetResolver.forVisionTasks(
                     'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
@@ -296,7 +298,6 @@
                     conf: conf
                 };
                 
-                // Отрисовка
                 ctx.strokeStyle = '#00ff88';
                 ctx.lineWidth = 3;
                 ctx.strokeRect(bbox.originX, bbox.originY, bbox.width, bbox.height);
