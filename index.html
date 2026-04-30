@@ -3,31 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>🎯 Face Turret v3</title>
-    <!-- Надёжная загрузка MediaPipe -->
+    <title>🎯 Face Turret</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/face_detection.js"></script>
     <style>
         :root { --bg:#0a0a0f; --panel:#151520; --accent:#00d4ff; --text:#e0e0e0; --ok:#00ff88; --warn:#ffaa00; --err:#ff4444; }
         * { margin:0; padding:0; box-sizing:border-box; touch-action:none; }
         body { background:var(--bg); color:var(--text); font-family:system-ui,sans-serif; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+        
         .header { display:flex; justify-content:space-between; align-items:center; padding:10px 15px; background:var(--panel); border-bottom:1px solid #2a2a3a; }
-        .header h1 { font-size:16px; color:var(--accent); }
+        .header h1 { font-size:16px; color:var(--accent); display:flex; align-items:center; gap:8px; }
+        .version-badge { background:#222; color:#777; font-size:10px; padding:2px 6px; border-radius:4px; font-family:monospace; border:1px solid #333; }
         .status { display:flex; align-items:center; gap:6px; font-size:12px; }
         .dot { width:8px; height:8px; border-radius:50%; background:var(--err); transition:0.3s; }
         .dot.on { background:var(--ok); box-shadow:0 0 6px var(--ok); }
+        
         .view { position:relative; flex:1; overflow:hidden; background:#000; }
+        /* Зеркалирование камеры и канваса (стандарт для фронтальной камеры) */
         video, canvas { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
         canvas { pointer-events:none; }
+        
         .hud { position:absolute; top:8px; left:8px; right:8px; display:flex; justify-content:space-between; z-index:10; pointer-events:none; }
         .badge { background:rgba(0,0,0,0.75); padding:4px 8px; border-radius:12px; font-size:11px; backdrop-filter:blur(4px); }
         .btn-row { display:flex; gap:6px; pointer-events:auto; }
         .btn-icon { background:rgba(0,0,0,0.6); border:1px solid #444; color:#aaa; width:32px; height:32px; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:14px; }
         .btn-icon:active { background:#333; }
+        
         .crosshair { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); pointer-events:none; z-index:5; }
         .crosshair::before, .crosshair::after { content:''; position:absolute; background:rgba(0,212,255,0.6); }
         .crosshair::before { width:24px; height:2px; top:50%; left:50%; transform:translate(-50%,-50%); }
         .crosshair::after { width:2px; height:24px; top:50%; left:50%; transform:translate(-50%,-50%); }
         .circle { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:48px; height:48px; border:2px solid rgba(0,212,255,0.4); border-radius:50%; }
+        
         .controls { padding:12px; background:var(--panel); border-top:1px solid #2a2a3a; }
         .mode-switch { display:flex; gap:8px; margin-bottom:12px; }
         .mode-btn { flex:1; padding:10px; border:1px solid #333; background:transparent; color:#888; border-radius:10px; font-weight:600; transition:0.2s; }
@@ -38,17 +44,19 @@
         .stick { width:46px; height:46px; background:radial-gradient(circle,var(--accent) 0%,#0066aa 100%); border-radius:50%; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); box-shadow:0 0 12px rgba(0,212,255,0.4); }
         .info { display:flex; justify-content:space-around; margin-top:8px; font-size:11px; color:#777; }
         .info span { color:var(--accent); font-family:monospace; }
+        
         .debug-panel { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.9); z-index:200; padding:15px; overflow-y:auto; font-family:monospace; font-size:12px; color:#0f0; }
         .debug-panel.show { display:block; }
         .debug-panel h3 { color:var(--accent); margin-bottom:10px; }
         .log-line { margin:2px 0; border-bottom:1px solid #222; padding:2px 0; }
         .log-line.err { color:var(--err); } .log-line.warn { color:var(--warn); }
         .close-db { position:fixed; top:10px; right:15px; background:#333; color:#fff; border:none; padding:5px 10px; border-radius:6px; }
+        .changelog { margin-top:15px; color:#888; font-size:11px; border-top:1px solid #333; padding-top:10px; }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>🎯 FACE TURRET</h1>
+        <h1>🎯 FACE TURRET <span class="version-badge" id="verBadge">v3.2.0</span></h1>
         <div class="status"><div class="dot" id="statusDot"></div><span id="statusText">Запуск...</span></div>
     </div>
 
@@ -87,15 +95,22 @@
         <button class="close-db" onclick="toggleDebug()">Закрыть</button>
         <h3>🐞 Системный лог</h3>
         <div id="debugLog"></div>
+        <div class="changelog">
+            <b>📜 Changelog:</b><br>
+            <span id="changelogContent">v3.2.0 - Исправлена загрузка AI, добавлено зеркалирование камеры, система версий</span>
+        </div>
     </div>
 
     <script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
     <script>
-        // Проверка безопасности
+        // === КОНФИГУРАЦИЯ И ВЕРСИЯ ===
+        const APP_VERSION = 'v3.2.0';
+        document.getElementById('verBadge').textContent = APP_VERSION;
+        document.getElementById('changelogContent').textContent = `${APP_VERSION} - Исправлена загрузка AI, добавлено зеркалирование камеры, система версий`;
+
         const isSecure = location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.protocol === 'https:';
         if(!isSecure) alert('⚠️ Камера и AI работают только на http://localhost или https://. Запустите через Live Server.');
 
-        // Конфиг
         const config = JSON.parse(localStorage.getItem('turretCfg') || '{}');
         config.prefix = config.prefix || 'turret_myid';
         const b = (config.broker || 'broker.hivemq.com:443').split(':');
@@ -115,7 +130,7 @@
             logEl.prepend(d); if(logEl.children.length>50) logEl.lastChild.remove();
         }
         window.toggleDebug = () => document.getElementById('debugPanel').classList.toggle('show');
-        log('✅ Страница загружена');
+        log(`🚀 Запуск ${APP_VERSION}`);
 
         // MQTT
         function initMQTT() {
@@ -171,7 +186,7 @@
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode, width:{ideal:640}, height:{ideal:480}}});
                 if(video.srcObject) video.srcObject.getTracks().forEach(t=>t.stop());
-                video.srcObject = stream; log('📷 Камера готова');
+                video.srcObject = stream; log('📷 Камера готова (зеркало: ON)');
                 
                 video.onloadedmetadata = () => {
                     video.play().then(() => {
@@ -194,7 +209,6 @@
                     locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/${f}`
                 });
                 faceDetection.setOptions({ model:'short', minDetectionConfidence:0.5 });
-                
                 faceDetection.onResults(onFaceResults);
                 log('✅ AI готов. Запуск цикла...');
                 runDetectionLoop();
@@ -211,7 +225,7 @@
                 const cy = box.yMin + box.height/2;
                 const conf = det.score[0];
 
-                // Рисуем
+                // Рисуем на зеркалированном канвасе
                 ctx.strokeStyle='#00ff88'; ctx.lineWidth=3;
                 ctx.strokeRect(box.xMin*canvas.width, box.yMin*canvas.height, box.width*canvas.width, box.height*canvas.height);
                 ctx.fillStyle='#00ff88'; ctx.beginPath(); ctx.arc(cx*canvas.width, cy*canvas.height, 6, 0, Math.PI*2); ctx.fill();
@@ -231,9 +245,7 @@
         function runDetectionLoop() {
             async function loop() {
                 if(video.readyState >= 2 && !video.paused && faceDetection) {
-                    try {
-                        await faceDetection.send({image: video});
-                    } catch(e) { console.warn('Frame skipped:', e); }
+                    try { await faceDetection.send({image: video}); } catch(e) { console.warn('Frame skipped:', e); }
                 }
                 requestAnimationFrame(loop);
             }
