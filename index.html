@@ -1,336 +1,331 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Turret Control</title>
-  <style>
-    :root { --bg: #0a0a0a; --panel: rgba(15,15,15,0.9); --accent: #2563eb; --accent-hover: #1d4ed8; --warn: #f59e0b; --text: #e5e7eb; --muted: #9ca3af; }
-    * { margin:0; padding:0; box-sizing:border-box; touch-action:none; -webkit-tap-highlight-color:transparent; }
-    body { background:var(--bg); overflow:hidden; height:100dvh; width:100vw; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--text); user-select:none; }
-    
-    #feed, #overlay { position:fixed; inset:0; width:100%; height:100%; object-fit:cover; }
-    #overlay { z-index:2; pointer-events:none; }
-    
-    #top-bar { position:fixed; top:0; left:0; right:0; z-index:10; padding:12px 16px; padding-top:max(12px, env(safe-area-inset-top)); background:linear-gradient(to bottom, rgba(0,0,0,0.7), transparent); display:flex; justify-content:space-between; align-items:center; }
-    #status { font-size:13px; color:var(--muted); }
-    
-    #controls { position:fixed; bottom:0; left:0; right:0; z-index:10; background:var(--panel); padding:16px; padding-bottom:max(16px, env(safe-area-inset-bottom)); border-radius:16px 16px 0 0; backdrop-filter:blur(8px); }
-    
-    .mode-row { display:flex; gap:10px; margin-bottom:12px; }
-    .mode-btn { flex:1; padding:10px; border:none; border-radius:8px; background:#27272a; color:var(--text); font-size:14px; font-weight:500; cursor:pointer; transition:0.2s; }
-    .mode-btn.active { background:var(--accent); color:#fff; }
-    
-    .manual-pad { display:none; grid-template-columns:repeat(3, 1fr); gap:8px; margin:0 auto 12px; max-width:220px; }
-    .manual-pad.active { display:grid; }
-    .dir-btn { width:60px; height:60px; border:none; border-radius:10px; background:#27272a; color:var(--text); font-size:24px; cursor:pointer; margin:auto; display:flex; align-items:center; justify-content:center; transition:0.1s; }
-    .dir-btn:active { background:#3f3f46; transform:scale(0.95); }
-    .up { grid-column:2; grid-row:1; } .left { grid-column:1; grid-row:2; } .right { grid-column:3; grid-row:2; } .down { grid-column:2; grid-row:3; }
-    
-    .slider-group { margin-bottom:10px; }
-    .slider-label { font-size:12px; color:var(--muted); margin-bottom:4px; display:flex; justify-content:space-between; }
-    .slider-val { color:var(--accent); font-weight:600; }
-    input[type=range] { width:100%; height:4px; border-radius:2px; background:#3f3f46; appearance:none; outline:none; }
-    input[type=range]::-webkit-slider-thumb { appearance:none; width:16px; height:16px; border-radius:50%; background:var(--accent); cursor:pointer; }
-    
-    .action-row { display:flex; gap:8px; margin-top:8px; }
-    .action-btn { flex:1; padding:10px; border:none; border-radius:6px; background:#27272a; color:var(--text); font-size:13px; cursor:pointer; }
-    .action-btn.warn { background:var(--warn); color:#000; font-weight:500; }
-    
-    #log { height:45px; overflow-y:auto; font-size:11px; background:#18181b; padding:6px; border-radius:6px; margin-top:10px; color:var(--muted); font-family:monospace; }
-    
-    #start { position:fixed; inset:0; z-index:20; background:var(--bg); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:24px; padding:32px; text-align:center; }
-    #start h1 { font-size:24px; font-weight:600; color:#fff; }
-    #start p { color:var(--muted); font-size:14px; max-width:280px; line-height:1.4; }
-    #ws-url { width:100%; max-width:260px; padding:12px; border-radius:8px; border:1px solid #3f3f46; background:#18181b; color:#fff; text-align:center; font-size:14px; outline:none; }
-    #ws-url:focus { border-color:var(--accent); }
-    .start-btn { padding:14px 32px; border:none; border-radius:8px; background:var(--accent); color:#fff; font-size:15px; font-weight:600; cursor:pointer; width:100%; max-width:260px; }
-    .start-btn:disabled { opacity:0.6; cursor:not-allowed; }
-    .start-btn:hover:not(:disabled) { background:var(--accent-hover); }
-    
-    .error-msg { color:#ef4444; font-size:13px; min-height:18px; margin-top:4px; }
-    .https-warn { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(220,38,38,0.95); color:#fff; padding:16px 20px; border-radius:10px; text-align:center; max-width:85%; display:none; z-index:30; font-size:14px; line-height:1.5; box-shadow:0 10px 25px rgba(0,0,0,0.5); }
-    .https-warn button { margin-top:10px; padding:8px 16px; border:none; border-radius:6px; background:#fff; color:#dc2626; font-weight:500; cursor:pointer; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🎯 Face Turret v2</title>
+    <style>
+        :root { --bg:#0a0a0f; --panel:#151520; --accent:#00d4ff; --text:#e0e0e0; --ok:#00ff88; --warn:#ffaa00; --err:#ff4444; }
+        * { margin:0; padding:0; box-sizing:border-box; touch-action:none; }
+        body { background:var(--bg); color:var(--text); font-family:system-ui,sans-serif; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+        
+        .header { display:flex; justify-content:space-between; align-items:center; padding:10px 15px; background:var(--panel); border-bottom:1px solid #2a2a3a; }
+        .header h1 { font-size:16px; color:var(--accent); }
+        .status { display:flex; align-items:center; gap:6px; font-size:12px; }
+        .dot { width:8px; height:8px; border-radius:50%; background:var(--err); transition:0.3s; }
+        .dot.on { background:var(--ok); box-shadow:0 0 6px var(--ok); }
+
+        .view { position:relative; flex:1; overflow:hidden; background:#000; }
+        video, canvas { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
+        canvas { pointer-events:none; }
+        
+        .hud { position:absolute; top:8px; left:8px; right:8px; display:flex; justify-content:space-between; z-index:10; pointer-events:none; }
+        .badge { background:rgba(0,0,0,0.75); padding:4px 8px; border-radius:12px; font-size:11px; backdrop-filter:blur(4px); }
+        .btn-row { display:flex; gap:6px; pointer-events:auto; }
+        .btn-icon { background:rgba(0,0,0,0.6); border:1px solid #444; color:#aaa; width:32px; height:32px; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:14px; }
+        .btn-icon:active { background:#333; }
+
+        .crosshair { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); pointer-events:none; z-index:5; }
+        .crosshair::before, .crosshair::after { content:''; position:absolute; background:rgba(0,212,255,0.6); }
+        .crosshair::before { width:24px; height:2px; top:50%; left:50%; transform:translate(-50%,-50%); }
+        .crosshair::after { width:2px; height:24px; top:50%; left:50%; transform:translate(-50%,-50%); }
+        .circle { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:48px; height:48px; border:2px solid rgba(0,212,255,0.4); border-radius:50%; }
+
+        .controls { padding:12px; background:var(--panel); border-top:1px solid #2a2a3a; }
+        .mode-switch { display:flex; gap:8px; margin-bottom:12px; }
+        .mode-btn { flex:1; padding:10px; border:1px solid #333; background:transparent; color:#888; border-radius:10px; font-weight:600; transition:0.2s; }
+        .mode-btn.active { background:var(--accent); color:#000; border-color:var(--accent); }
+
+        .joystick-wrap { display:none; height:160px; justify-content:center; align-items:center; }
+        .joystick-wrap.show { display:flex; }
+        .base { width:140px; height:140px; background:radial-gradient(circle,#1a1a2a 0%,#0a0a0f 100%); border:2px solid #2a2a3a; border-radius:50%; position:relative; }
+        .stick { width:46px; height:46px; background:radial-gradient(circle,var(--accent) 0%,#0066aa 100%); border-radius:50%; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); box-shadow:0 0 12px rgba(0,212,255,0.4); }
+
+        .info { display:flex; justify-content:space-around; margin-top:8px; font-size:11px; color:#777; }
+        .info span { color:var(--accent); font-family:monospace; }
+
+        /* Диагностическая панель */
+        .debug-panel { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.9); z-index:200; padding:15px; overflow-y:auto; font-family:monospace; font-size:12px; color:#0f0; }
+        .debug-panel.show { display:block; }
+        .debug-panel h3 { color:var(--accent); margin-bottom:10px; }
+        .log-line { margin:2px 0; border-bottom:1px solid #222; padding:2px 0; }
+        .log-line.err { color:var(--err); } .log-line.warn { color:var(--warn); }
+        .close-db { position:fixed; top:10px; right:15px; background:#333; color:#fff; border:none; padding:5px 10px; border-radius:6px; }
+    </style>
 </head>
 <body>
-  <video id="feed" autoplay playsinline muted></video>
-  <canvas id="overlay"></canvas>
-
-  <div id="top-bar">
-    <h1 style="font-size:18px; font-weight:600;">Turret Control</h1>
-    <div id="status">Ожидание</div>
-  </div>
-
-  <div id="start">
-    <h1>Управление турелью</h1>
-    <p>Введите адрес WebSocket вашего контроллера и нажмите кнопку для запуска камеры и подключения.</p>
-    <input type="text" id="ws-url" value="ws://192.168.1.100:8765" placeholder="ws://IP:8765">
-    <button class="start-btn" id="btn-go">Запустить систему</button>
-    <div class="error-msg" id="start-error"></div>
-  </div>
-
-  <div id="controls" style="display:none;">
-    <div class="mode-row">
-      <button class="mode-btn active" id="mode-auto">Авто слежение</button>
-      <button class="mode-btn" id="mode-manual">Ручное управление</button>
+    <div class="header">
+        <h1>🎯 FACE TURRET</h1>
+        <div class="status">
+            <div class="dot" id="statusDot"></div>
+            <span id="statusText">Инициализация...</span>
+        </div>
     </div>
 
-    <div class="manual-pad" id="manual-pad">
-      <button class="dir-btn up" data-dir="up">^</button>
-      <button class="dir-btn left" data-dir="left">&lt;</button>
-      <button class="dir-btn right" data-dir="right">&gt;</button>
-      <button class="dir-btn down" data-dir="down">v</button>
+    <div class="view">
+        <video id="video" playsinline autoplay muted></video>
+        <canvas id="canvas"></canvas>
+        <div class="crosshair"><div class="circle"></div></div>
+        <div class="hud">
+            <div class="badge" id="faceBadge">⏳ Загрузка AI...</div>
+            <div class="btn-row">
+                <button class="btn-icon" onclick="switchCamera()" title="Сменить камеру">🔄</button>
+                <button class="btn-icon" onclick="toggleDebug()" title="Диагностика">🐞</button>
+            </div>
+        </div>
     </div>
 
-    <div class="slider-group">
-      <div class="slider-label"><span>Скорость движения</span><span class="slider-val" id="speed-val">50%</span></div>
-      <input type="range" id="speed" min="10" max="100" value="50">
+    <div class="controls">
+        <div class="mode-switch">
+            <button class="mode-btn active" id="btnAuto" onclick="setMode('auto')">🤖 АВТО</button>
+            <button class="mode-btn" id="btnManual" onclick="setMode('manual')">🎮 РУЧНОЙ</button>
+        </div>
+        <div class="joystick-wrap" id="joystickWrap">
+            <div class="base" id="joystickBase"><div class="stick" id="joystickStick"></div></div>
+        </div>
+        <div style="display:flex; justify-content:center; gap:8px; margin-top:6px;">
+            <button class="mode-btn" style="flex:0.5; padding:6px; font-size:12px;" onclick="toggleTestMode()">🧪 ТЕСТ MQTT</button>
+        </div>
+        <div class="info">
+            <div>X: <span id="valX">0.00</span></div>
+            <div>Y: <span id="valY">0.00</span></div>
+            <div>Режим: <span id="modeLabel">AUTO</span></div>
+        </div>
     </div>
 
-    <div class="slider-group" id="auto-settings">
-      <div class="slider-label"><span>Чувствительность слежения</span><span class="slider-val" id="sens-val">0.50</span></div>
-      <input type="range" id="sens" min="0.1" max="1.0" step="0.05" value="0.5">
+    <!-- Диагностическая панель -->
+    <div class="debug-panel" id="debugPanel">
+        <button class="close-db" onclick="toggleDebug()">Закрыть</button>
+        <h3>🐞 Системный лог</h3>
+        <div id="debugLog"></div>
     </div>
 
-    <div class="action-row">
-      <button class="action-btn" id="btn-center">Сброс в центр</button>
-      <button class="action-btn warn" id="btn-stop">Экстренный стоп</button>
+    <div class="modal" id="settingsModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:100; padding:20px; justify-content:center; align-items:center;">
+        <div style="background:var(--panel); padding:20px; border-radius:12px; width:100%; max-width:300px; border:1px solid #333;">
+            <h3 style="color:var(--accent); margin-bottom:10px;">⚙️ Настройки</h3>
+            <label style="font-size:12px; color:#888;">Префикс топиков</label>
+            <input id="cfgPrefix" value="turret_myid" style="width:100%; padding:10px; margin:6px 0; border-radius:8px; border:1px solid #444; background:#1a1a2a; color:#fff;">
+            <label style="font-size:12px; color:#888;">Брокер</label>
+            <input id="cfgBroker" value="broker.hivemq.com:443" style="width:100%; padding:10px; margin:6px 0; border-radius:8px; border:1px solid #444; background:#1a1a2a; color:#fff;">
+            <label style="display:flex; align-items:center; gap:8px; margin:10px 0; font-size:12px; color:#888;">
+                <input type="checkbox" id="cfgSSL" checked style="width:auto;"> WSS (SSL)
+            </label>
+            <button onclick="saveSettings()" style="width:100%; padding:10px; background:var(--accent); color:#000; font-weight:bold; border:none; border-radius:8px; margin-top:10px;">💾 Сохранить</button>
+            <button onclick="document.getElementById('settingsModal').style.display='none'" style="width:100%; padding:10px; background:#333; color:#fff; border:none; border-radius:8px; margin-top:8px;">Закрыть</button>
+        </div>
     </div>
 
-    <div id="log"></div>
-  </div>
+    <script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
+    <script type="module">
+        // === КОНФИГ ===
+        const config = JSON.parse(localStorage.getItem('turretCfg') || '{}');
+        config.prefix = config.prefix || 'turret_myid';
+        const b = (config.broker || 'broker.hivemq.com:443').split(':');
+        config.broker = b[0]; config.port = parseInt(b[1]) || 443; config.ssl = config.ssl !== false;
+        let facingMode = localStorage.getItem('camFacing') || 'user';
 
-  <div class="https-warn" id="https-warn">
-    Камера требует безопасного соединения.<br>
-    Откройте сайт по HTTPS или используйте localhost.<br>
-    <button onclick="document.getElementById('https-warn').style.display='none'">Понятно</button>
-  </div>
+        document.getElementById('cfgPrefix').value = config.prefix;
+        document.getElementById('cfgBroker').value = `${config.broker}:${config.port}`;
+        document.getElementById('cfgSSL').checked = config.ssl;
 
-  <script>
-    const feed = document.getElementById('feed');
-    const canvas = document.getElementById('overlay');
-    const ctx = canvas.getContext('2d', { alpha:true, desynchronized:true });
-    const statusEl = document.getElementById('status');
-    const logEl = document.getElementById('log');
-    const startScreen = document.getElementById('start');
-    const controls = document.getElementById('controls');
-    const manualPad = document.getElementById('manual-pad');
-    const autoSettings = document.getElementById('auto-settings');
-    const btnGo = document.getElementById('btn-go');
-    const startError = document.getElementById('start-error');
+        let mqtt = null, currentMode = 'auto', testMode = false, faceData = null;
+        let lastPub = {face:0, joy:0, test:0};
+        const PUB_RATE = 80;
 
-    let socket = null;
-    let detector = null;
-    let mode = 'auto';
-    let speed = 50;
-    let sensitivity = 0.5;
-    let smoothX = 0, smoothY = 0;
-    let manualTimer = null;
-    const SMOOTH = 0.3;
-
-    function log(msg) {
-      const d = new Date().toLocaleTimeString();
-      const entry = document.createElement('div');
-      entry.style.margin = '2px 0';
-      entry.textContent = `[${d}] ${msg}`;
-      logEl.prepend(entry);
-      if (logEl.children.length > 50) logEl.lastChild.remove();
-    }
-
-    // Проверка HTTPS
-    if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-      document.getElementById('https-warn').style.display = 'block';
-    }
-
-    // FaceDetector API
-    if (window.FaceDetector) {
-      detector = new FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
-    } else {
-      console.warn('FaceDetector не поддерживается этим браузером');
-    }
-
-    // WebSocket
-    function connectWS(url) {
-      if (!url.startsWith('ws://') && !url.startsWith('wss://')) {
-        startError.textContent = 'Адрес должен начинаться с ws:// или wss://';
-        return;
-      }
-      if (socket?.readyState === WebSocket.OPEN) return;
-      
-      socket = new WebSocket(url);
-      socket.onopen = () => { 
-        statusEl.textContent = 'Подключено'; 
-        log('WebSocket соединение установлено'); 
-      };
-      socket.onclose = () => { 
-        statusEl.textContent = 'Отключено'; 
-        log('Соединение разорвано. Попытка переподключения...'); 
-        setTimeout(()=>connectWS(url), 3000); 
-      };
-      socket.onerror = () => statusEl.textContent = 'Ошибка сети';
-      socket.onmessage = (e) => {
-        try { 
-          const d = JSON.parse(e.data); 
-          if(d.type==='ack') log(`OK: ${d.msg} | Pan: ${d.p}° Tilt: ${d.t}°`); 
-        } catch(err) { console.warn('Неверный JSON от ESP32', err); }
-      };
-    }
-
-    function send(cmd) {
-      if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify(cmd));
-      } else {
-        statusEl.textContent = 'Нет соединения';
-      }
-    }
-
-    // Ручное управление
-    function startManual(dir) {
-      stopManual();
-      const spd = speed / 100;
-      send({ type:'manual', dir, speed:spd });
-      manualTimer = setInterval(() => send({ type:'manual', dir, speed:spd, hold:true }), 150);
-    }
-    function stopManual() {
-      if (manualTimer) { clearInterval(manualTimer); manualTimer = null; }
-      send({ type:'manual', stop:true });
-    }
-
-    // Цикл детекции
-    async function loop() {
-      if (!detector || !feed.videoWidth || mode !== 'auto') { 
-        requestAnimationFrame(loop); 
-        return; 
-      }
-      
-      if (canvas.width !== feed.videoWidth) { 
-        canvas.width = feed.videoWidth; 
-        canvas.height = feed.videoHeight; 
-      }
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-
-      try {
-        const faces = await detector.detect(feed);
-        if (faces.length) {
-          const f = faces[0];
-          const cx = f.boundingBox.x + f.boundingBox.width/2;
-          const cy = f.boundingBox.y + f.boundingBox.height/2;
-          
-          let nx = (cx / canvas.width - 0.5) * 2;
-          let ny = (cy / canvas.height - 0.5) * 2;
-          smoothX = smoothX*(1-SMOOTH) + nx*SMOOTH;
-          smoothY = smoothY*(1-SMOOTH) + ny*SMOOTH;
-
-          ctx.strokeStyle = '#10b981'; ctx.lineWidth = 3;
-          ctx.strokeRect(f.boundingBox.x-2, f.boundingBox.y-2, f.boundingBox.width+4, f.boundingBox.height+4);
-          ctx.fillStyle = '#10b981'; ctx.font = 'bold 14px system-ui';
-          ctx.fillText('TARGET', cx-26, cy-10);
-
-          if (Math.abs(smoothX)>0.08 || Math.abs(smoothY)>0.08) {
-            send({ type:'track', x:smoothX, y:smoothY, s:sensitivity * (speed/100) });
-          }
-        } else {
-          smoothX = 0; smoothY = 0;
-          ctx.fillStyle = 'rgba(255,255,255,0.4)';
-          ctx.font = '14px system-ui';
-          ctx.fillText('Поиск цели...', canvas.width/2-50, 40);
+        // === ЛОГИРОВАНИЕ ===
+        const logEl = document.getElementById('debugLog');
+        function log(msg, type='info') {
+            const d = document.createElement('div'); d.className = `log-line ${type==='err'?'err':type==='warn'?'warn':''}`;
+            d.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logEl.prepend(d);
+            if(logEl.children.length > 50) logEl.lastChild.remove();
         }
-      } catch(e) { console.warn('Ошибка детекции:', e); }
-      requestAnimationFrame(loop);
-    }
 
-    // Запуск системы
-    btnGo.onclick = async () => {
-      const urlInput = document.getElementById('ws-url');
-      const url = urlInput.value.trim();
-      startError.textContent = '';
+        window.toggleDebug = () => document.getElementById('debugPanel').classList.toggle('show');
+        log('Запуск системы...');
 
-      if (!url) {
-        startError.textContent = 'Введите адрес WebSocket';
-        return;
-      }
-
-      btnGo.disabled = true;
-      btnGo.textContent = 'Подключение...';
-
-      try {
-        // 1. Камера
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false
-        });
-        feed.srcObject = stream;
-
-        // 2. WebSocket
-        connectWS(url);
-
-        // 3. Переключаем UI
-        startScreen.style.display = 'none';
-        controls.style.display = 'block';
-        log('Система запущена');
-        
-        if (detector) {
-          requestAnimationFrame(loop);
-          log('Авто-слежение активно');
-        } else {
-          log('Авто-слежение недоступно. Используйте ручное управление.');
+        // === MQTT ===
+        function initMQTT() {
+            const url = `${config.ssl ? 'wss' : 'ws'}://${config.broker}:${config.port}/mqtt`;
+            log(`Подключение к ${url}`);
+            mqtt = mqtt.connect(url, {clientId: `web_${Math.random().toString(36).slice(2,9)}`, clean:true, reconnectPeriod:2000});
+            mqtt.on('connect', () => {
+                document.getElementById('statusDot').classList.add('on');
+                document.getElementById('statusText').textContent = 'MQTT OK';
+                mqtt.subscribe(`${config.prefix}/status`);
+                log('MQTT подключено', 'ok');
+            });
+            mqtt.on('error', e => { log(`MQTT ошибка: ${e.message}`, 'err'); document.getElementById('statusDot').classList.remove('on'); });
+            mqtt.on('close', () => { document.getElementById('statusDot').classList.remove('on'); document.getElementById('statusText').textContent = 'Отключено'; });
         }
-      } catch (err) {
-        console.error(err);
-        let msg = err.message;
-        if (err.name === 'NotAllowedError') msg = 'Доступ к камере запрещён. Разрешите в настройках браузера.';
-        else if (err.name === 'NotFoundError') msg = 'Камера не найдена.';
-        else if (err.name === 'NotReadableError') msg = 'Камера занята другим приложением.';
-        
-        startError.textContent = msg;
-        btnGo.disabled = false;
-        btnGo.textContent = 'Запустить систему';
-      }
-    };
 
-    // UI обработчики
-    document.getElementById('mode-auto').onclick = function() { 
-      mode='auto'; this.classList.add('active'); 
-      document.getElementById('mode-manual').classList.remove('active'); 
-      manualPad.classList.remove('active'); 
-      autoSettings.style.display='block'; 
-      stopManual(); 
-      log('Режим: Авто'); 
-    };
-    
-    document.getElementById('mode-manual').onclick = function() { 
-      mode='manual'; this.classList.add('active'); 
-      document.getElementById('mode-auto').classList.remove('active'); 
-      manualPad.classList.add('active'); 
-      autoSettings.style.display='none'; 
-      log('Режим: Ручной'); 
-    };
-    
-    document.getElementById('speed').oninput = function() { 
-      speed=+this.value; 
-      document.getElementById('speed-val').textContent=speed+'%'; 
-    };
-    
-    document.getElementById('sens').oninput = function() { 
-      sensitivity=+this.value; 
-      document.getElementById('sens-val').textContent=sensitivity.toFixed(2); 
-    };
-    
-    document.getElementById('btn-center').onclick = () => { send({type:'center'}); log('Команда: Центр'); };
-    document.getElementById('btn-stop').onclick = () => { send({type:'stop'}); stopManual(); log('Команда: Стоп'); };
+        function pub(topic, data, qos=0) {
+            if(!mqtt?.connected || Date.now() - lastPub.face < PUB_RATE) return;
+            mqtt.publish(`${config.prefix}/${topic}`, typeof data==='string' ? data : JSON.stringify(data), {qos});
+            lastPub.face = Date.now();
+        }
 
-    // Кнопки направления
-    document.querySelectorAll('.dir-btn').forEach(btn => {
-      const dir = btn.dataset.dir;
-      const start = e => { e.preventDefault(); startManual(dir); };
-      const end = e => { e.preventDefault(); stopManual(); };
-      btn.addEventListener('touchstart', start); 
-      btn.addEventListener('mousedown', start);
-      btn.addEventListener('touchend', end); 
-      btn.addEventListener('mouseup', end); 
-      btn.addEventListener('mouseleave', end);
-    });
-  </script>
+        // === UI ===
+        window.setMode = m => {
+            currentMode = m; testMode = false;
+            document.getElementById('btnAuto').classList.toggle('active', m==='auto');
+            document.getElementById('btnManual').classList.toggle('active', m==='manual');
+            document.getElementById('joystickWrap').classList.toggle('show', m==='manual');
+            document.getElementById('modeLabel').textContent = m.toUpperCase();
+            pub('mode', m, 1); log(`Режим: ${m.toUpperCase()}`);
+        };
+
+        window.toggleTestMode = () => {
+            testMode = !testMode;
+            const b = document.querySelector('.mode-btn[onclick*="TEST"]');
+            b.style.background = testMode ? '#ffaa00' : ''; b.style.color = testMode ? '#000' : '';
+            log(testMode ? '🧪 Тестовый режим ВКЛ' : '🧪 Тестовый режим ВЫКЛ', testMode?'warn':'ok');
+        };
+
+        window.toggleSettings = () => document.getElementById('settingsModal').style.display = 'flex';
+        window.saveSettings = () => {
+            const b = document.getElementById('cfgBroker').value.split(':');
+            localStorage.setItem('turretCfg', JSON.stringify({prefix:document.getElementById('cfgPrefix').value, broker:b[0], port:parseInt(b[1])||443, ssl:document.getElementById('cfgSSL').checked}));
+            location.reload();
+        };
+
+        // === КАМЕРА ===
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const faceBadge = document.getElementById('faceBadge');
+        let faceDetection = null;
+
+        window.switchCamera = async () => {
+            facingMode = facingMode === 'user' ? 'environment' : 'user';
+            localStorage.setItem('camFacing', facingMode);
+            log(`Смена камеры на: ${facingMode}`);
+            await startCamera();
+        };
+
+        async function startCamera() {
+            if(!navigator.mediaDevices?.getUserMedia) {
+                alert('❌ Камера недоступна. Используйте HTTPS или localhost.');
+                log('getUserMedia не поддерживается', 'err');
+                return;
+            }
+            if(location.protocol !== 'https:' && location.hostname !== 'localhost') {
+                log('⚠️ Камера может быть заблокирована. Требуется HTTPS или localhost', 'warn');
+            }
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode, width:{ideal:640}, height:{ideal:480} } });
+                if(video.srcObject) video.srcObject.getTracks().forEach(t=>t.stop());
+                video.srcObject = stream;
+                log('Камера инициализирована');
+                
+                video.onloadedmetadata = () => {
+                    video.play().then(() => {
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        log(`Видео: ${video.videoWidth}x${video.videoHeight}`);
+                        if(faceDetection) startDetectionLoop();
+                    });
+                };
+            } catch(e) {
+                log(`Ошибка камеры: ${e.message}`, 'err');
+                faceBadge.textContent = '❌ Нет камеры';
+            }
+        }
+
+        // === MEDIAPIPE ===
+        async function loadMediaPipe() {
+            try {
+                log('Загрузка MediaPipe Face Detection...');
+                const { FaceDetection } = await import('https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/+esm');
+                
+                faceDetection = new FaceDetection({
+                    locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/${f}`
+                });
+                faceDetection.setOptions({ model:'short', minDetectionConfidence:0.5 });
+                
+                faceDetection.onResults(res => {
+                    ctx.clearRect(0,0,canvas.width,canvas.height);
+                    if(res.detections?.length > 0) {
+                        const b = res.detections[0].boundingBox;
+                        const cx = b.xMin + b.width/2, cy = b.yMin + b.height/2;
+                        
+                        ctx.strokeStyle='#00ff88'; ctx.lineWidth=3;
+                        ctx.strokeRect(b.xMin*canvas.width, b.yMin*canvas.height, b.width*canvas.width, b.height*canvas.height);
+                        ctx.fillStyle='#00ff88'; ctx.beginPath(); ctx.arc(cx*canvas.width, cy*canvas.height, 6, 0, Math.PI*2); ctx.fill();
+
+                        faceData = { x: cx-0.5, y: cy-0.5, w: b.width, h: b.height, conf: res.detections[0].score[0] };
+                        faceBadge.textContent = `✅ Лицо (${Math.round(faceData.conf*100)}%)`;
+                        faceBadge.style.color = '#00ff88';
+                        document.getElementById('valX').textContent = faceData.x.toFixed(2);
+                        document.getElementById('valY').textContent = faceData.y.toFixed(2);
+                        
+                        if(currentMode==='auto' && !testMode) pub('face', faceData);
+                    } else {
+                        faceData = null;
+                        faceBadge.textContent = '🔍 Поиск лица...';
+                        faceBadge.style.color = '#ffaa00';
+                    }
+                });
+
+                log('MediaPipe загружен успешно');
+                startDetectionLoop();
+            } catch(e) {
+                log(`Ошибка MediaPipe: ${e.message}`, 'err');
+                faceBadge.textContent = '⚠️ AI не загрузился';
+                faceBadge.style.color = '#ff4444';
+            }
+        }
+
+        function startDetectionLoop() {
+            async function loop() {
+                if(video.readyState >= 2 && !video.paused && faceDetection) {
+                    try { await faceDetection.send({image: video}); } catch(e) { console.warn('Frame skip', e); }
+                }
+                requestAnimationFrame(loop);
+            }
+            loop();
+        }
+
+        // === ДЖОЙСТИК ===
+        const base = document.getElementById('joystickBase');
+        const stick = document.getElementById('joystickStick');
+        let joyCenter={x:0,y:0}, joyActive=false, maxR=55;
+
+        function joyStart(e) { e.preventDefault(); joyActive=true; const r=base.getBoundingClientRect(); joyCenter={x:r.left+r.width/2, y:r.top+r.height/2}; }
+        function joyMove(e) {
+            if(!joyActive || currentMode!=='manual') return; e.preventDefault();
+            const t = e.touches?e.touches[0]:e;
+            let dx=t.clientX-joyCenter.x, dy=t.clientY-joyCenter.y;
+            const d=Math.hypot(dx,dy); if(d>maxR){dx=dx/d*maxR; dy=dy/d*maxR;}
+            stick.style.transform=`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+            const nx=dx/maxR, ny=dy/maxR;
+            document.getElementById('valX').textContent=nx.toFixed(2);
+            document.getElementById('valY').textContent=ny.toFixed(2);
+            pub('manual', {x:nx, y:ny, t:Date.now()});
+        }
+        function joyEnd() { joyActive=false; stick.style.transform='translate(-50%,-50%)'; pub('manual',{x:0,y:0,t:Date.now()}); document.getElementById('valX').textContent='0.00'; document.getElementById('valY').textContent='0.00'; }
+        base.addEventListener('touchstart', joyStart, {passive:false});
+        base.addEventListener('touchmove', joyMove, {passive:false});
+        base.addEventListener('touchend', joyEnd);
+        base.addEventListener('mousedown', joyStart); window.addEventListener('mousemove', joyMove); window.addEventListener('mouseup', joyEnd);
+
+        // === ТЕСТОВЫЙ ЦИКЛ (эмуляция лица) ===
+        setInterval(() => {
+            if(!testMode || !mqtt?.connected) return;
+            const t = Date.now()/1000;
+            const tx = Math.sin(t*0.8)*0.3;
+            const ty = Math.cos(t*1.2)*0.2;
+            pub('face', {x:tx, y:ty, w:0.2, h:0.3, t:Date.now()});
+            document.getElementById('valX').textContent=tx.toFixed(2);
+            document.getElementById('valY').textContent=ty.toFixed(2);
+            faceBadge.textContent='🧪 Тест: синусоида'; faceBadge.style.color='#ffaa00';
+        }, 100);
+
+        // === СТАРТ ===
+        initMQTT();
+        startCamera();
+        loadMediaPipe();
+    </script>
 </body>
 </html>
