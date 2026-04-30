@@ -76,10 +76,19 @@
         .modal-btn.danger { background:var(--err); color:#fff; }
         .modal-btn.danger:hover { background:#ff6666; }
         
+        /* Экран ошибки */
+        .error-screen { display:none; position:absolute; inset:0; background:rgba(10,10,15,0.98); z-index:50; padding:20px; justify-content:center; align-items:center; text-align:center; }
+        .error-screen.show { display:flex; flex-direction:column; }
+        .error-screen h2 { color:var(--err); margin-bottom:15px; font-size:18px; }
+        .error-screen p { color:#aaa; font-size:13px; margin:8px 0; line-height:1.4; }
+        .error-screen code { background:#222; padding:2px 6px; border-radius:4px; font-size:11px; color:var(--accent); }
+        .error-screen .btn { margin-top:20px; padding:10px 20px; background:var(--accent); color:#000; border:none; border-radius:8px; font-weight:600; cursor:pointer; }
+        
         /* Анимация загрузки */
-        .loading { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#888; font-size:13px; }
+        .loading { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#888; font-size:13px; text-align:center; }
         .spinner { width:24px; height:24px; border:3px solid rgba(0,212,255,0.2); border-top-color:var(--accent); border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 10px; }
         @keyframes spin { to { transform:rotate(360deg); } }
+        .loading-status { font-size:11px; color:#666; margin-top:8px; }
 
         /* Адаптивность */
         @media (max-height:700px) {
@@ -110,9 +119,22 @@
                 <button class="btn-icon settings-btn" onclick="toggleSettings()" title="Настройки">⚙️</button>
             </div>
         </div>
-        <div class="loading" id="loadingMsg" style="display:none;">
+        <div class="loading" id="loadingMsg">
             <div class="spinner"></div>
             <div>Загрузка нейросети...</div>
+            <div class="loading-status" id="loadingStatus">Инициализация MediaPipe...</div>
+        </div>
+        
+        <!-- Экран ошибки -->
+        <div class="error-screen" id="errorScreen">
+            <h2>❌ Ошибка загрузки</h2>
+            <p id="errorMsg">Не удалось загрузить AI-модуль</p>
+            <p>💡 Попробуйте:</p>
+            <p>• Открыть через <code>http://localhost</code></p>
+            <p>• Проверить подключение к интернету</p>
+            <p>• Обновить браузер</p>
+            <button class="btn" onclick="retryLoad()">🔄 Повторить</button>
+            <button class="btn" style="background:#333;color:#fff;margin-top:10px" onclick="startTestOnly()">⚙️ Только тест-режим</button>
         </div>
     </div>
 
@@ -140,6 +162,12 @@
         <button class="close-db" onclick="toggleDebug()">✕ Закрыть</button>
         <h3>🐞 Системный лог</h3>
         <div id="debugLog"></div>
+        <div style="margin-top:15px; padding-top:10px; border-top:1px solid #333;">
+            <strong style="color:var(--accent)">🔧 Быстрые действия:</strong><br>
+            <button onclick="retryCamera()" style="margin:3px; padding:4px 8px; background:#333; color:#fff; border:none; border-radius:4px; font-size:10px; cursor:pointer;">📷 Перезагрузить камеру</button>
+            <button onclick="retryAI()" style="margin:3px; padding:4px 8px; background:#333; color:#fff; border:none; border-radius:4px; font-size:10px; cursor:pointer;">🧠 Перезагрузить AI</button>
+            <button onclick="copyLog()" style="margin:3px; padding:4px 8px; background:#00d4ff; color:#000; border:none; border-radius:4px; font-size:10px; cursor:pointer;">📋 Копировать лог</button>
+        </div>
     </div>
 
     <!-- Модальное окно настроек -->
@@ -171,6 +199,10 @@
         </div>
     </div>
 
+    <!-- Eruda для мобильной отладки (опционально) -->
+    <!-- <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <script>if(typeof eruda !== 'undefined') eruda.init();</script> -->
+
     <script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
     <script type="module">
         // === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ===
@@ -185,8 +217,9 @@
         let mqtt = null, mqttModule = null;
         let currentMode = 'auto', testMode = false, faceData = null;
         let lastPub = {face:0, joy:0, test:0};
-        const PUB_RATE = 80; // мин. интервал между публикациями в мс
+        const PUB_RATE = 80;
         let detectionRunning = false;
+        let aiLoaded = false; // Флаг успешной загрузки AI
 
         // === ИНИЦИАЛИЗАЦИЯ UI ===
         function initUI() {
@@ -206,24 +239,67 @@
             logEl.prepend(d);
             if(logEl.children.length > 100) logEl.lastChild.remove();
             console.log(`[${type.toUpperCase()}] ${msg}`);
+            
+            // Обновляем статус загрузки
+            if(type === 'info' && msg.includes('MediaPipe')) {
+                document.getElementById('loadingStatus').textContent = msg.replace('🧠 ', '');
+            }
         }
 
         window.toggleDebug = () => {
             const panel = document.getElementById('debugPanel');
             panel.classList.toggle('show');
-            if(panel.classList.contains('show')) log('Диагностическая панель открыта');
+            if(panel.classList.contains('show')) log('🐞 Диагностическая панель открыта', 'ok');
         };
         
         window.clearLog = () => {
             logEl.innerHTML = '';
-            log('Лог очищен', 'ok');
+            log('🗑️ Лог очищен', 'ok');
+        };
+        
+        window.copyLog = () => {
+            const text = Array.from(logEl.children).map(c => c.textContent).join('\n');
+            navigator.clipboard?.writeText(text).then(() => {
+                log('📋 Лог скопирован в буфер', 'ok');
+                alert('✅ Лог скопирован!');
+            }).catch(() => {
+                alert('❌ Не удалось скопировать. Выделите текст вручную.');
+            });
         };
 
         log('🚀 Запуск Face Turret v2...', 'ok');
 
+        // === ПРОВЕРКА ОКРУЖЕНИЯ ===
+        function checkEnvironment() {
+            const issues = [];
+            
+            if(location.protocol === 'file:') {
+                issues.push('⛔ Запуск через file:// — используйте http://localhost');
+            }
+            
+            if(!navigator.mediaDevices?.getUserMedia) {
+                issues.push('❌ getUserMedia не поддерживается');
+            }
+            
+            if(!window.WebAssembly) {
+                issues.push('❌ WebAssembly не поддерживается');
+            }
+            
+            const canvas = document.createElement('canvas');
+            if(!canvas.getContext('webgl2') && !canvas.getContext('webgl')) {
+                issues.push('⚠️ WebGL может быть ограничен');
+            }
+            
+            if(issues.length > 0) {
+                log('⚠️ Проблемы окружения: ' + issues.join('; '), 'warn');
+                return false;
+            }
+            return true;
+        }
+
         // === MQTT ФУНКЦИИ ===
         function createMQTTClient() {
-            if(!mqttModule) {
+            if(!window.mqtt) {
                 log('❌ MQTT библиотека не загружена', 'err');
                 return null;
             }
@@ -231,9 +307,9 @@
             const url = `${config.ssl ? 'wss' : 'ws'}://${config.broker}:${config.port}/mqtt`;
             const clientId = `turret_${Math.random().toString(36).slice(2,10)}`;
             
-            log(`🔗 Подключение к ${url} (client: ${clientId})`);
+            log(`🔗 Подключение к ${url}`);
             
-            const client = mqttModule.connect(url, {
+            const client = window.mqtt.connect(url, {
                 clientId: clientId,
                 clean: true,
                 reconnectPeriod: config.autoReconnect ? 2000 : 0,
@@ -267,9 +343,9 @@
             client.on('message', (topic, payload) => {
                 try {
                     const msg = JSON.parse(payload.toString());
-                    log(`📩 Получено: ${topic} = ${JSON.stringify(msg).slice(0,50)}...`);
+                    log(`📩 ${topic}: ${JSON.stringify(msg).slice(0,50)}...`);
                     if(topic.endsWith('/cmd') && msg.cmd === 'reconnect') {
-                        log('🔄 Получена команда переподключения');
+                        log('🔄 Команда переподключения', 'warn');
                         reconnectMQTT();
                     }
                 } catch(e) {
@@ -281,20 +357,21 @@
         }
 
         function initMQTT() {
-            window.mqttModule = mqtt;
+            mqttModule = window.mqtt;
             mqtt = createMQTTClient();
         }
 
         function reconnectMQTT() {
             log('🔄 Переподключение MQTT...');
             if(mqtt?.connected) mqtt.end(true);
-            setTimeout(() => {
-                mqtt = createMQTTClient();
-            }, 500);
+            setTimeout(() => { mqtt = createMQTTClient(); }, 500);
         }
 
         function pub(topic, data, qos=0) {
-            if(!mqtt?.connected) { log('⚠️ MQTT не подключен, пропуск публикации', 'warn'); return false; }
+            if(!mqtt?.connected) { 
+                // log('⚠️ MQTT не подключен', 'warn'); 
+                return false; 
+            }
             if(Date.now() - lastPub.face < PUB_RATE) return false;
             
             const payload = typeof data === 'string' ? data : JSON.stringify(data);
@@ -325,17 +402,27 @@
             btn.textContent = testMode ? '⏹ СТОП ТЕСТ' : '🧪 ТЕСТ';
             log(testMode ? '🧪 Тестовый режим: ВКЛ' : '🧪 Тестовый режим: ВЫКЛ', testMode?'warn':'ok');
             
-            if(!testMode && currentMode==='auto') {
-                // Возврат к нормальной отрисовке
+            if(!testMode && currentMode==='auto' && aiLoaded) {
                 faceData = null;
             }
+        };
+
+        // Запуск только тест-режима без AI
+        window.startTestOnly = () => {
+            document.getElementById('errorScreen').classList.remove('show');
+            document.getElementById('loadingMsg').style.display = 'none';
+            document.getElementById('faceBadge').textContent = '🧪 ТЕСТ (без AI)';
+            document.getElementById('faceBadge').style.color = '#ffaa00';
+            aiLoaded = false;
+            toggleTestMode();
+            setMode('manual');
+            log('⚙️ Запущен тест-режим без AI', 'warn');
         };
 
         // === НАСТРОЙКИ ===
         window.toggleSettings = () => {
             const modal = document.getElementById('settingsModal');
             modal.classList.toggle('show');
-            // Обновляем значения из config
             document.getElementById('cfgPrefix').value = config.prefix;
             document.getElementById('cfgBroker').value = `${config.broker}:${config.port}`;
             document.getElementById('cfgSSL').checked = config.ssl;
@@ -351,21 +438,13 @@
             const newPrefix = document.getElementById('cfgPrefix').value.trim() || 'turret_myid';
             const newAutoReconnect = document.getElementById('cfgAutoReconnect').checked;
             
-            if(!newBroker || newBroker.length < 3) {
-                log('❌ Неверный адрес брокера', 'err');
-                return;
-            }
-            if(newPort < 1 || newPort > 65535) {
-                log('❌ Неверный порт', 'err');
-                return;
-            }
+            if(!newBroker || newBroker.length < 3) { log('❌ Неверный адрес брокера', 'err'); return; }
+            if(newPort < 1 || newPort > 65535) { log('❌ Неверный порт', 'err'); return; }
             
-            // Сохраняем
             const newConfig = { prefix: newPrefix, broker: newBroker, port: newPort, ssl: newSsl, autoReconnect: newAutoReconnect };
             localStorage.setItem('turretCfg', JSON.stringify(newConfig));
             config = newConfig;
             
-            // Применяем динамически
             changeBroker(newBroker, newPort, newSsl, newPrefix);
             
             document.getElementById('settingsModal').classList.remove('show');
@@ -373,400 +452,7 @@
         };
 
         window.resetSettings = () => {
-            if(confirm('⚠️ Сбросить ВСЕ настройки к значениям по умолчанию?\n\nЭто переподключит к брокеру по умолчанию.')) {
+            if(confirm('⚠️ Сбросить ВСЕ настройки?\nЭто перезагрузит страницу.')) {
                 localStorage.removeItem('turretCfg');
                 localStorage.removeItem('camFacing');
-                location.reload();
-            }
-        };
-
-        function changeBroker(broker, port, ssl, prefix) {
-            log(`🔄 Смена брокера: ${broker}:${port} (${ssl?'WSS':'WS'})`, 'warn');
-            document.getElementById('statusText').textContent = 'Переподключение...';
-            document.getElementById('statusDot').classList.remove('on');
-            
-            if(mqtt?.connected) mqtt.end(true);
-            
-            config.broker = broker;
-            config.port = port;
-            config.ssl = ssl;
-            if(prefix) config.prefix = prefix;
-            
-            setTimeout(() => {
-                mqtt = createMQTTClient();
-            }, 300);
-        }
-
-        // === КАМЕРА ===
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d', { alpha: false });
-        const faceBadge = document.getElementById('faceBadge');
-        const loadingMsg = document.getElementById('loadingMsg');
-        let faceDetection = null;
-
-        window.switchCamera = async () => {
-            facingMode = facingMode === 'user' ? 'environment' : 'user';
-            localStorage.setItem('camFacing', facingMode);
-            log(`📷 Смена камеры: ${facingMode === 'user' ? 'фронтальная' : 'задняя'}`);
-            await startCamera();
-        };
-
-        async function startCamera() {
-            if(!navigator.mediaDevices?.getUserMedia) {
-                alert('❌ Камера недоступна.\nИспользуйте HTTPS или localhost.');
-                log('❌ getUserMedia не поддерживается', 'err');
-                faceBadge.textContent = '❌ Нет камеры';
-                return;
-            }
-
-            if(location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-                log('⚠️ Камера может быть заблокирована браузером. Требуется HTTPS или localhost', 'warn');
-            }
-
-            try {
-                loadingMsg.style.display = 'block';
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
-                        facingMode: facingMode, 
-                        width: { ideal: 640 }, 
-                        height: { ideal: 480 },
-                        frameRate: { ideal: 30 }
-                    } 
-                });
-                
-                if(video.srcObject) {
-                    video.srcObject.getTracks().forEach(t => t.stop());
-                }
-                video.srcObject = stream;
-                log('📷 Камера инициализирована', 'ok');
-                
-                video.onloadedmetadata = () => {
-                    video.play().then(() => {
-                        canvas.width = video.videoWidth;
-                        canvas.height = video.videoHeight;
-                        loadingMsg.style.display = 'none';
-                        log(`🎬 Видео: ${video.videoWidth}×${video.videoHeight}@${video.videoWidth>1000?'HD':'SD'}`, 'ok');
-                        if(faceDetection && !detectionRunning) startDetectionLoop();
-                    }).catch(e => log(`❌ Ошибка воспроизведения: ${e.message}`, 'err'));
-                };
-            } catch(e) {
-                loadingMsg.style.display = 'none';
-                log(`❌ Ошибка камеры: ${e.message}`, 'err');
-                faceBadge.textContent = '❌ Нет камеры';
-                faceBadge.style.color = '#ff4444';
-            }
-        }
-
-        // === MEDIAPIPE (Современная версия) ===
-        async function loadMediaPipe() {
-            loadingMsg.style.display = 'block';
-            loadingMsg.querySelector('div:last-child').textContent = 'Загрузка AI...';
-
-            try {
-                // 🔍 Проверка на запуск без сервера
-                if (location.protocol === 'file:') {
-                    throw new Error('⛔ Запустите через локальный сервер (http://localhost), а не двойным кликом по файлу! Браузер блокирует AI на file://');
-                }
-
-                log('🧠 Загрузка MediaPipe Tasks Vision...');
-                
-                // Импортируем официальную библиотеку Google
-                const { FaceDetector, FilesetResolver } = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm');
-                
-                // Инициализируем загрузчик WASM
-                const filesetResolver = await FilesetResolver.forVisionTasks(
-                    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
-                );
-
-                // Создаём детектор
-                faceDetection = await FaceDetector.createFromOptions(filesetResolver, {
-                    baseOptions: {
-                        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite`,
-                        delegate: "CPU" // GPU часто глючит на мобильных, CPU стабильнее
-                    },
-                    runningMode: "VIDEO",
-                    minDetectionConfidence: 0.5,
-                    minSuppressionThreshold: 0.3
-                });
-
-                log('✅ MediaPipe AI успешно загружен', 'ok');
-                loadingMsg.style.display = 'none';
-                startDetectionLoop();
-                
-            } catch(e) {
-                loadingMsg.style.display = 'none';
-                const errMsg = e.message || 'Неизвестная ошибка инициализации';
-                log(`❌ Ошибка AI: ${errMsg}`, 'err');
-                console.error('MediaPipe Error Stack:', e);
-                faceBadge.textContent = '⚠️ AI ошибка';
-                faceBadge.style.color = '#ff4444';
-                alert(`AI не загрузился:\n${errMsg}\n\n💡 Убедитесь, что сайт открыт через http://localhost или https://`);
-            }
-        }
-
-        function startDetectionLoop() {
-            if(detectionRunning) return;
-            detectionRunning = true;
-            
-            async function processFrame() {
-                // Пропускаем кадр, если видео не готово или вкладка скрыта
-                if(video.readyState >= 2 && !video.paused && faceDetection && document.visibilityState === 'visible') {
-                    try {
-                        // Новый API: передаём видео, получаем detections
-                        const results = await faceDetection.detect(video);
-                        processDetections(results);
-                    } catch(e) {
-                        console.warn('⏭ Пропуск кадра:', e);
-                    }
-                }
-                requestAnimationFrame(processFrame);
-            }
-            processFrame();
-            log('🔄 Цикл AI детекции запущен (Tasks Vision)', 'ok');
-        }
-
-        function processDetections(results) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            if(results.detections?.length > 0) {
-                const det = results.detections[0];
-                const bbox = det.boundingBox; // {originX, originY, width, height} в пикселях
-                const conf = det.categories?.[0]?.score || 0;
-
-                // Координаты центра (в пикселях)
-                const cx = bbox.originX + bbox.width / 2;
-                const cy = bbox.originY + bbox.height / 2;
-
-                // === КВАДРАТ (по большей стороне bbox) ===
-                const sizePx = Math.max(bbox.width, bbox.height);
-                const half = sizePx / 2;
-                const sqX = cx - half;
-                const sqY = cy - half;
-                const pulse = 0.95 + 0.05 * Math.sin(Date.now() / 100);
-
-                // Рамка
-                ctx.strokeStyle = `rgba(0, 255, 136, ${0.7 + pulse * 0.3})`;
-                ctx.lineWidth = 3 * pulse;
-                ctx.shadowColor = 'rgba(0, 255, 136, 0.4)';
-                ctx.shadowBlur = 15 * pulse;
-                ctx.strokeRect(sqX, sqY, sizePx, sizePx);
-
-                // Угловые маркеры
-                ctx.shadowBlur = 0;
-                ctx.strokeStyle = 'rgba(0, 212, 255, 0.8)';
-                ctx.lineWidth = 2;
-                const cornerLen = Math.min(sizePx * 0.2, 40);
-                ctx.beginPath();
-                // 4 угла
-                ctx.moveTo(sqX, sqY + cornerLen); ctx.lineTo(sqX, sqY); ctx.lineTo(sqX + cornerLen, sqY);
-                ctx.moveTo(sqX + sizePx - cornerLen, sqY); ctx.lineTo(sqX + sizePx, sqY); ctx.lineTo(sqX + sizePx, sqY + cornerLen);
-                ctx.moveTo(sqX, sqY + sizePx - cornerLen); ctx.lineTo(sqX, sqY + sizePx); ctx.lineTo(sqX + cornerLen, sqY + sizePx);
-                ctx.moveTo(sqX + sizePx - cornerLen, sqY + sizePx); ctx.lineTo(sqX + sizePx, sqY + sizePx); ctx.lineTo(sqX + sizePx, sqY + sizePx - cornerLen);
-                ctx.stroke();
-
-                // Центр
-                ctx.fillStyle = '#00ff88';
-                ctx.shadowColor = 'rgba(0, 255, 136, 0.6)';
-                ctx.shadowBlur = 10;
-                ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2); ctx.fill();
-                ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
-
-                // Формируем faceData в СТАРОМ формате (совместимо с ESP32/MCU)
-                faceData = { 
-                    x: (cx / canvas.width) - 0.5,   // -0.5..+0.5
-                    y: (cy / canvas.height) - 0.5,  // -0.5..+0.5
-                    w: bbox.width / canvas.width, 
-                    h: bbox.height / canvas.height,
-                    conf: conf,
-                    square: sizePx / canvas.width,
-                    ts: Date.now()
-                };
-
-                const confPct = Math.round(faceData.conf * 100);
-                faceBadge.textContent = `✅ Лицо ${confPct}%`;
-                faceBadge.style.color = confPct > 70 ? '#00ff88' : '#ffaa00';
-                document.getElementById('valX').textContent = faceData.x.toFixed(2);
-                document.getElementById('valY').textContent = faceData.y.toFixed(2);
-                
-                if(currentMode === 'auto' && !testMode) pub('face', faceData);
-                
-            } else {
-                faceData = null;
-                faceBadge.textContent = '🔍 Поиск...';
-                faceBadge.style.color = '#ffaa00';
-                // Пунктирный квадрат "поиска"
-                ctx.strokeStyle = 'rgba(255, 170, 0, 0.3)';
-                ctx.lineWidth = 2;
-                ctx.setLineDash([6, 4]);
-                ctx.strokeRect(canvas.width*0.25, canvas.height*0.25, canvas.width*0.5, canvas.height*0.5);
-                ctx.setLineDash([]);
-            }
-        }
-
-        // === ВИРТУАЛЬНЫЙ ДЖОЙСТИК ===
-        const base = document.getElementById('joystickBase');
-        const stick = document.getElementById('joystickStick');
-        let joyCenter = { x: 0, y: 0 };
-        let joyActive = false;
-        const maxR = 55; // макс. радиус хода стика
-
-        function joyStart(e) { 
-            e.preventDefault(); 
-            joyActive = true; 
-            const r = base.getBoundingClientRect(); 
-            joyCenter = { x: r.left + r.width/2, y: r.top + r.height/2 };
-            stick.style.transition = 'none';
-        }
-        
-        function joyMove(e) {
-            if(!joyActive || currentMode !== 'manual') return; 
-            e.preventDefault();
-            
-            const t = e.touches ? e.touches[0] : e;
-            let dx = t.clientX - joyCenter.x;
-            let dy = t.clientY - joyCenter.y;
-            
-            // Ограничение радиуса
-            const dist = Math.hypot(dx, dy);
-            if(dist > maxR) {
-                dx = dx / dist * maxR;
-                dy = dy / dist * maxR;
-            }
-            
-            // Визуальное перемещение стика
-            stick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-            
-            // Нормализованные значения (-1..+1)
-            const nx = dx / maxR;
-            const ny = dy / maxR;
-            
-            // Обновление UI
-            document.getElementById('valX').textContent = nx.toFixed(2);
-            document.getElementById('valY').textContent = ny.toFixed(2);
-            
-            // Отправка
-            if(Date.now() - lastPub.joy > PUB_RATE) {
-                pub('manual', { x: nx, y: ny, t: Date.now() });
-                lastPub.joy = Date.now();
-            }
-        }
-        
-        function joyEnd() { 
-            if(!joyActive) return;
-            joyActive = false; 
-            stick.style.transition = 'transform 0.15s ease-out';
-            stick.style.transform = 'translate(-50%, -50%)';
-            
-            // Сброс значений
-            pub('manual', { x: 0, y: 0, t: Date.now(), release: true });
-            document.getElementById('valX').textContent = '0.00';
-            document.getElementById('valY').textContent = '0.00';
-        }
-
-        // Привязка событий джойстика
-        base.addEventListener('touchstart', joyStart, { passive: false });
-        base.addEventListener('touchmove', joyMove, { passive: false });
-        base.addEventListener('touchend', joyEnd);
-        base.addEventListener('touchcancel', joyEnd);
-        base.addEventListener('mousedown', joyStart);
-        window.addEventListener('mousemove', joyMove);
-        window.addEventListener('mouseup', joyEnd);
-
-        // === ТЕСТОВЫЙ РЕЖИМ (эмуляция лица) ===
-        setInterval(() => {
-            if(!testMode || !mqtt?.connected) return;
-            
-            const t = Date.now() / 1000;
-            // Синусоидальное движение для теста
-            const tx = Math.sin(t * 0.8) * 0.35;
-            const ty = Math.cos(t * 1.1) * 0.25;
-            
-            pub('face', { 
-                x: tx, 
-                y: ty, 
-                w: 0.22, 
-                h: 0.28, 
-                conf: 0.95,
-                square: 0.3,
-                t: Date.now(),
-                test: true 
-            });
-            
-            // Обновление UI
-            document.getElementById('valX').textContent = tx.toFixed(2);
-            document.getElementById('valY').textContent = ty.toFixed(2);
-            faceBadge.textContent = '🧪 ТЕСТ: синус';
-            faceBadge.style.color = '#ffaa00';
-            
-            // Визуализация на канвасе
-            if(canvas.width > 0) {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                const cx = (tx + 0.5) * canvas.width;
-                const cy = (ty + 0.5) * canvas.height;
-                const size = 80;
-                
-                ctx.strokeStyle = '#ffaa00';
-                ctx.lineWidth = 3;
-                ctx.setLineDash([8, 4]);
-                ctx.strokeRect(cx - size/2, cy - size/2, size, size);
-                ctx.setLineDash([]);
-                
-                ctx.fillStyle = '#ffaa00';
-                ctx.beginPath();
-                ctx.arc(cx, cy, 6, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }, 100);
-
-        // === ОБРАБОТКА ВИДИМОСТИ СТРАНИЦЫ ===
-        document.addEventListener('visibilitychange', () => {
-            if(document.visibilityState === 'visible') {
-                log('👁 Страница стала видимой, возобновляем детекцию');
-                if(faceDetection && !detectionRunning) startDetectionLoop();
-            } else {
-                log('🌙 Страница скрыта, пауза детекции');
-                // Можно добавить паузу для экономии ресурсов
-            }
-        });
-
-        // === ОБРАБОТКА ОШИБОК ===
-        window.addEventListener('error', e => {
-            log(`💥 Global error: ${e.message} @${e.filename}:${e.lineno}`, 'err');
-        });
-        
-        window.addEventListener('unhandledrejection', e => {
-            log(`💥 Unhandled promise: ${e.reason}`, 'err');
-        });
-
-        // === СТАРТ СИСТЕМЫ ===
-        async function startSystem() {
-            initUI();
-            initMQTT();
-            await startCamera();
-            await loadMediaPipe();
-            
-            // Heartbeat каждые 30 сек
-            setInterval(() => {
-                if(mqtt?.connected) {
-                    pub('heartbeat', { 
-                        ts: Date.now(), 
-                        mode: currentMode, 
-                        facing: facingMode,
-                        mem: performance?.memory ? Math.round(performance.memory.usedJSHeapSize/1024/1024) : null 
-                    }, 0);
-                }
-            }, 30000);
-            
-            log('✅ Система готова к работе', 'ok');
-        }
-
-        // Запуск после загрузки
-        if(document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', startSystem);
-        } else {
-            startSystem();
-        }
-    </script>
-</body>
-</html>
+                location.reload
