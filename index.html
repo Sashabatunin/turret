@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>🎯 Face Turret</title>
+    <title>🎯 Face Turret v3</title>
+    <!-- Надёжная загрузка MediaPipe -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/face_detection.js"></script>
     <style>
         :root { --bg:#0a0a0f; --panel:#151520; --accent:#00d4ff; --text:#e0e0e0; --ok:#00ff88; --warn:#ffaa00; --err:#ff4444; }
         * { margin:0; padding:0; box-sizing:border-box; touch-action:none; }
@@ -42,24 +44,12 @@
         .log-line { margin:2px 0; border-bottom:1px solid #222; padding:2px 0; }
         .log-line.err { color:var(--err); } .log-line.warn { color:var(--warn); }
         .close-db { position:fixed; top:10px; right:15px; background:#333; color:#fff; border:none; padding:5px 10px; border-radius:6px; }
-        #ssl-warning { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.95); z-index:999; padding:20px; text-align:center; color:#fff; }
-        #ssl-warning.show { display:flex; flex-direction:column; justify-content:center; align-items:center; }
-        #ssl-warning h2 { color:var(--warn); margin-bottom:15px; }
-        #ssl-warning p { margin:5px 0; max-width:300px; }
-        #ssl-warning button { padding:10px 20px; background:var(--accent); color:#000; border:none; border-radius:8px; margin:5px; cursor:pointer; font-weight:bold; }
     </style>
 </head>
 <body>
-    <div id="ssl-warning">
-        <h2>⚠️ Камера заблокирована</h2>
-        <p>Браузеры разрешают доступ к камере только через <b>localhost</b> или <b>HTTPS</b>.</p>
-        <p>Запустите файл через <b>Live Server</b> в VS Code или команду <code>npx serve</code>.</p>
-        <button onclick="startDebugMode()">🛠 Режим отладки (без камеры)</button>
-    </div>
-
     <div class="header">
         <h1>🎯 FACE TURRET</h1>
-        <div class="status"><div class="dot" id="statusDot"></div><span id="statusText">Инициализация...</span></div>
+        <div class="status"><div class="dot" id="statusDot"></div><span id="statusText">Запуск...</span></div>
     </div>
 
     <div class="view">
@@ -67,7 +57,7 @@
         <canvas id="canvas"></canvas>
         <div class="crosshair"><div class="circle"></div></div>
         <div class="hud">
-            <div class="badge" id="faceBadge">⏳ Загрузка AI...</div>
+            <div class="badge" id="faceBadge">⏳ AI загружается...</div>
             <div class="btn-row">
                 <button class="btn-icon" onclick="switchCamera()" title="Сменить камеру">🔄</button>
                 <button class="btn-icon" onclick="toggleDebug()" title="Диагностика">🐞</button>
@@ -100,10 +90,12 @@
     </div>
 
     <script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
-    <script type="module">
-        const isSecure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.hostname.includes('ngrok');
-        if(!isSecure) document.getElementById('ssl-warning').classList.add('show');
+    <script>
+        // Проверка безопасности
+        const isSecure = location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.protocol === 'https:';
+        if(!isSecure) alert('⚠️ Камера и AI работают только на http://localhost или https://. Запустите через Live Server.');
 
+        // Конфиг
         const config = JSON.parse(localStorage.getItem('turretCfg') || '{}');
         config.prefix = config.prefix || 'turret_myid';
         const b = (config.broker || 'broker.hivemq.com:443').split(':');
@@ -113,22 +105,23 @@
         let mqtt = null, currentMode = 'auto', testMode = false, faceData = null;
         let lastPub = {face:0, joy:0};
         const PUB_RATE = 80;
+        let faceDetection = null;
 
+        // Логирование
         const logEl = document.getElementById('debugLog');
         function log(msg, type='info') {
             const d = document.createElement('div'); d.className = `log-line ${type==='err'?'err':type==='warn'?'warn':''}`;
             d.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-            logEl.prepend(d);
-            if(logEl.children.length > 50) logEl.lastChild.remove();
+            logEl.prepend(d); if(logEl.children.length>50) logEl.lastChild.remove();
         }
         window.toggleDebug = () => document.getElementById('debugPanel').classList.toggle('show');
-        window.startDebugMode = () => { document.getElementById('ssl-warning').style.display='none'; toggleDebug(); log('⚠️ Режим отладки (камера отключена)', 'warn'); setMode('manual'); };
-        log('Запуск системы...');
+        log('✅ Страница загружена');
 
+        // MQTT
         function initMQTT() {
-            const url = `${config.ssl ? 'wss' : 'ws'}://${config.broker}:${config.port}/mqtt`;
-            log(`MQTT → ${url}`);
-            mqtt = mqtt.connect(url, {clientId: `web_${Math.random().toString(36).slice(2,9)}`, clean:true, reconnectPeriod:2000});
+            const url = `${config.ssl?'wss':'ws'}://${config.broker}:${config.port}/mqtt`;
+            log(`🔗 MQTT → ${url}`);
+            mqtt = mqtt.connect(url, {clientId:`web_${Math.random().toString(36).slice(2,9)}`, clean:true, reconnectPeriod:2000});
             mqtt.on('connect', () => {
                 document.getElementById('statusDot').classList.add('on');
                 document.getElementById('statusText').textContent = 'MQTT OK';
@@ -139,115 +132,127 @@
         }
 
         function pub(topic, data, qos=0) {
-            if(!mqtt?.connected || Date.now() - lastPub.face < PUB_RATE) return;
-            mqtt.publish(`${config.prefix}/${topic}`, typeof data==='string' ? data : JSON.stringify(data), {qos});
+            if(!mqtt?.connected || Date.now()-lastPub.face<PUB_RATE) return;
+            const payload = typeof data === 'string' ? data : JSON.stringify(data);
+            mqtt.publish(`${config.prefix}/${topic}`, payload, {qos});
             lastPub.face = Date.now();
         }
 
+        // Управление
         window.setMode = m => {
-            currentMode = m; testMode = false;
+            currentMode=m; testMode=false;
             document.getElementById('btnAuto').classList.toggle('active', m==='auto');
             document.getElementById('btnManual').classList.toggle('active', m==='manual');
             document.getElementById('joystickWrap').classList.toggle('show', m==='manual');
             document.getElementById('modeLabel').textContent = m.toUpperCase();
-            pub('mode', m, 1); log(`Режим: ${m.toUpperCase()}`);
+            pub('mode', m, 1); log(`🎛 Режим: ${m.toUpperCase()}`);
         };
 
         window.toggleTestMode = () => {
-            testMode = !testMode;
+            testMode=!testMode;
             const btn = document.querySelector('.mode-btn[onclick*="TEST"]');
-            btn.style.background = testMode ? '#ffaa00' : ''; btn.style.color = testMode ? '#000' : '';
-            log(testMode ? '🧪 Тест MQTT: синусоида' : '🧪 Тест выключен', testMode?'warn':'ok');
+            btn.style.background = testMode?'#ffaa00':''; btn.style.color = testMode?'#000':'';
+            log(testMode?'🧪 Тест MQTT: синусоида':'🧪 Тест выключен', testMode?'warn':'ok');
         };
 
         window.switchCamera = async () => {
-            facingMode = facingMode === 'user' ? 'environment' : 'user';
+            facingMode = facingMode==='user'?'environment':'user';
             localStorage.setItem('camFacing', facingMode);
-            log(`🔄 Камера: ${facingMode}`);
-            await startCamera();
+            log(`🔄 Камера → ${facingMode}`); await startCamera();
         };
 
+        // Камера и AI
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         const faceBadge = document.getElementById('faceBadge');
-        let faceDetection = null;
 
         async function startCamera() {
-            if(!isSecure) return;
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode, width:{ideal:640}, height:{ideal:480} } });
+                const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode, width:{ideal:640}, height:{ideal:480}}});
                 if(video.srcObject) video.srcObject.getTracks().forEach(t=>t.stop());
-                video.srcObject = stream;
-                log('✅ Камера инициализирована');
+                video.srcObject = stream; log('📷 Камера готова');
+                
                 video.onloadedmetadata = () => {
                     video.play().then(() => {
                         canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-                        log(`📹 ${video.videoWidth}x${video.videoHeight}`);
-                        if(faceDetection) startDetectionLoop();
+                        log(`🖼 Видео: ${canvas.width}x${canvas.height}`);
+                        initFaceDetection();
                     });
                 };
-            } catch(e) {
-                log(`❌ Камера: ${e.name} - ${e.message}`, 'err');
-                faceBadge.textContent = '❌ Нет доступа';
-            }
+            } catch(e) { log(`❌ Камера: ${e.name}`, 'err'); faceBadge.textContent='❌ Нет доступа'; }
         }
 
-        async function loadMediaPipe() {
+        function initFaceDetection() {
+            if(typeof FaceDetection === 'undefined') {
+                log('❌ Библиотека MediaPipe не загрузилась. Проверьте интернет.', 'err');
+                faceBadge.textContent = '⚠️ AI ошибка'; return;
+            }
             try {
-                log('⏳ Загрузка Face Detection...');
-                const { FaceDetection } = await import('https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/+esm');
-                faceDetection = new FaceDetection({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/${f}` });
+                log('⚙️ Инициализация FaceDetection...');
+                faceDetection = new FaceDetection({
+                    locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/${f}`
+                });
                 faceDetection.setOptions({ model:'short', minDetectionConfidence:0.5 });
                 
-                faceDetection.onResults(res => {
-                    ctx.clearRect(0,0,canvas.width,canvas.height);
-                    if(res.detections?.length > 0) {
-                        const b = res.detections[0].boundingBox;
-                        const cx = b.xMin + b.width/2, cy = b.yMin + b.height/2;
-                        ctx.strokeStyle='#00ff88'; ctx.lineWidth=3;
-                        ctx.strokeRect(b.xMin*canvas.width, b.yMin*canvas.height, b.width*canvas.width, b.height*canvas.height);
-                        ctx.fillStyle='#00ff88'; ctx.beginPath(); ctx.arc(cx*canvas.width, cy*canvas.height, 6, 0, Math.PI*2); ctx.fill();
-                        
-                        faceData = { x: cx-0.5, y: cy-0.5, w: b.width, h: b.height, conf: res.detections[0].score[0] };
-                        faceBadge.textContent = `✅ Лицо (${Math.round(faceData.conf*100)}%)`; faceBadge.style.color = '#00ff88';
-                        document.getElementById('valX').textContent = faceData.x.toFixed(2);
-                        document.getElementById('valY').textContent = faceData.y.toFixed(2);
-                        if(currentMode==='auto' && !testMode) pub('face', faceData);
-                    } else {
-                        faceData = null;
-                        faceBadge.textContent = '🔍 Поиск...'; faceBadge.style.color = '#ffaa00';
-                    }
-                });
-                log('✅ MediaPipe готов');
-                startDetectionLoop();
-            } catch(e) {
-                log(`❌ AI: ${e.message}`, 'err');
-                faceBadge.textContent = '⚠️ AI ошибка'; faceBadge.style.color = '#ff4444';
+                faceDetection.onResults(onFaceResults);
+                log('✅ AI готов. Запуск цикла...');
+                runDetectionLoop();
+            } catch(e) { log(`❌ AI Init: ${e.message}`, 'err'); }
+        }
+
+        function onFaceResults(results) {
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            
+            if(results.detections && results.detections.length > 0) {
+                const det = results.detections[0];
+                const box = det.boundingBox;
+                const cx = box.xMin + box.width/2;
+                const cy = box.yMin + box.height/2;
+                const conf = det.score[0];
+
+                // Рисуем
+                ctx.strokeStyle='#00ff88'; ctx.lineWidth=3;
+                ctx.strokeRect(box.xMin*canvas.width, box.yMin*canvas.height, box.width*canvas.width, box.height*canvas.height);
+                ctx.fillStyle='#00ff88'; ctx.beginPath(); ctx.arc(cx*canvas.width, cy*canvas.height, 6, 0, Math.PI*2); ctx.fill();
+
+                faceData = { x: cx-0.5, y: cy-0.5, w: box.width, h: box.height, conf };
+                faceBadge.textContent = `✅ Лицо (${Math.round(conf*100)}%)`; faceBadge.style.color = '#00ff88';
+                document.getElementById('valX').textContent = faceData.x.toFixed(2);
+                document.getElementById('valY').textContent = faceData.y.toFixed(2);
+
+                if(currentMode==='auto' && !testMode) pub('face', faceData);
+            } else {
+                faceData = null;
+                faceBadge.textContent = '🔍 Поиск...'; faceBadge.style.color = '#ffaa00';
             }
         }
 
-        function startDetectionLoop() {
+        function runDetectionLoop() {
             async function loop() {
                 if(video.readyState >= 2 && !video.paused && faceDetection) {
-                    try { await faceDetection.send({image: video}); } catch(e) {}
+                    try {
+                        await faceDetection.send({image: video});
+                    } catch(e) { console.warn('Frame skipped:', e); }
                 }
                 requestAnimationFrame(loop);
             }
             loop();
         }
 
-        const base = document.getElementById('joystickBase');
-        const stick = document.getElementById('joystickStick');
+        // Джойстик
+        const base=document.getElementById('joystickBase'), stick=document.getElementById('joystickStick');
         let joyCenter={x:0,y:0}, joyActive=false, maxR=55;
         function joyStart(e) { e.preventDefault(); joyActive=true; const r=base.getBoundingClientRect(); joyCenter={x:r.left+r.width/2, y:r.top+r.height/2}; }
-        function joyMove(e) { if(!joyActive || currentMode!=='manual') return; e.preventDefault(); const t=e.touches?e.touches[0]:e; let dx=t.clientX-joyCenter.x, dy=t.clientY-joyCenter.y; const d=Math.hypot(dx,dy); if(d>maxR){dx=dx/d*maxR; dy=dy/d*maxR;} stick.style.transform=`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`; const nx=dx/maxR, ny=dy/maxR; document.getElementById('valX').textContent=nx.toFixed(2); document.getElementById('valY').textContent=ny.toFixed(2); pub('manual', {x:nx, y:ny, t:Date.now()}); }
+        function joyMove(e) { if(!joyActive||currentMode!=='manual') return; e.preventDefault(); const t=e.touches?e.touches[0]:e; let dx=t.clientX-joyCenter.x, dy=t.clientY-joyCenter.y; const d=Math.hypot(dx,dy); if(d>maxR){dx=dx/d*maxR; dy=dy/d*maxR;} stick.style.transform=`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`; const nx=dx/maxR, ny=dy/maxR; document.getElementById('valX').textContent=nx.toFixed(2); document.getElementById('valY').textContent=ny.toFixed(2); pub('manual', {x:nx, y:ny, t:Date.now()}); }
         function joyEnd() { joyActive=false; stick.style.transform='translate(-50%,-50%)'; pub('manual',{x:0,y:0,t:Date.now()}); document.getElementById('valX').textContent='0.00'; document.getElementById('valY').textContent='0.00'; }
         base.addEventListener('touchstart', joyStart, {passive:false}); base.addEventListener('touchmove', joyMove, {passive:false}); base.addEventListener('touchend', joyEnd); base.addEventListener('mousedown', joyStart); window.addEventListener('mousemove', joyMove); window.addEventListener('mouseup', joyEnd);
 
-        setInterval(() => { if(!testMode || !mqtt?.connected) return; const t=Date.now()/1000; pub('face', {x:Math.sin(t*0.8)*0.3, y:Math.cos(t*1.2)*0.2, w:0.2, h:0.3, t:Date.now()}); document.getElementById('valX').textContent=Math.sin(t*0.8).toFixed(2); document.getElementById('valY').textContent=Math.cos(t*1.2).toFixed(2); faceBadge.textContent='🧪 Тест'; faceBadge.style.color='#ffaa00'; }, 100);
+        // Тестовый режим
+        setInterval(() => { if(!testMode||!mqtt?.connected) return; const t=Date.now()/1000; pub('face', {x:Math.sin(t*0.8)*0.3, y:Math.cos(t*1.2)*0.2, w:0.2, h:0.3, t:Date.now()}); document.getElementById('valX').textContent=Math.sin(t*0.8).toFixed(2); document.getElementById('valY').textContent=Math.cos(t*1.2).toFixed(2); faceBadge.textContent='🧪 Тест'; faceBadge.style.color='#ffaa00'; }, 100);
 
-        initMQTT(); startCamera(); loadMediaPipe();
+        // Запуск
+        initMQTT(); startCamera();
     </script>
 </body>
 </html>
