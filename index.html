@@ -458,148 +458,50 @@
             }
         }
 
-        // === MEDIAPIPE FACE DETECTION ===
+        // === MEDIAPIPE (Современная версия) ===
         async function loadMediaPipe() {
             loadingMsg.style.display = 'block';
             loadingMsg.querySelector('div:last-child').textContent = 'Загрузка AI...';
-            
+
             try {
-                log('🧠 Загрузка MediaPipe Face Detection...');
+                // 🔍 Проверка на запуск без сервера
+                if (location.protocol === 'file:') {
+                    throw new Error('⛔ Запустите через локальный сервер (http://localhost), а не двойным кликом по файлу! Браузер блокирует AI на file://');
+                }
+
+                log('🧠 Загрузка MediaPipe Tasks Vision...');
                 
-                // Динамический импорт
-                const faceDetectionModule = await import('https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/+esm');
-                const { FaceDetection } = faceDetectionModule;
+                // Импортируем официальную библиотеку Google
+                const { FaceDetector, FilesetResolver } = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm');
                 
-                faceDetection = new FaceDetection({
-                    locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/${file}`
-                });
-                
-                faceDetection.setOptions({ 
-                    model: 'short', 
+                // Инициализируем загрузчик WASM
+                const filesetResolver = await FilesetResolver.forVisionTasks(
+                    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+                );
+
+                // Создаём детектор
+                faceDetection = await FaceDetector.createFromOptions(filesetResolver, {
+                    baseOptions: {
+                        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite`,
+                        delegate: "CPU" // GPU часто глючит на мобильных, CPU стабильнее
+                    },
+                    runningMode: "VIDEO",
                     minDetectionConfidence: 0.5,
                     minSuppressionThreshold: 0.3
                 });
-                
-                faceDetection.onResults(results => {
-                    // Очистка канваса
-                    ctx.fillStyle = 'rgba(0,0,0,0)';
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    
-                    if(results.detections?.length > 0) {
-                        const detection = results.detections[0];
-                        const bbox = detection.boundingBox;
-                        
-                        // Центр лица (нормализованные координаты 0..1)
-                        const cx = bbox.xMin + bbox.width / 2;
-                        const cy = bbox.yMin + bbox.height / 2;
-                        
-                        // === ОТРИСОВКА КВАДРАТА ВОКРУГ ЛИЦА ===
-                        const sizeNorm = Math.max(bbox.width, bbox.height);
-                        const half = sizeNorm / 2;
-                        
-                        // Пиксельные координаты квадрата
-                        const sqX = (cx - half) * canvas.width;
-                        const sqY = (cy - half) * canvas.height;
-                        const sqSize = sizeNorm * canvas.width;
-                        
-                        // Пульсирующий эффект рамки
-                        const pulse = 0.95 + 0.05 * Math.sin(Date.now() / 100);
-                        
-                        // Основная рамка квадрата
-                        ctx.strokeStyle = `rgba(0, 255, 136, ${0.7 + pulse * 0.3})`;
-                        ctx.lineWidth = 3 * pulse;
-                        ctx.shadowColor = 'rgba(0, 255, 136, 0.4)';
-                        ctx.shadowBlur = 15 * pulse;
-                        ctx.strokeRect(sqX, sqY, sqSize, sqSize);
-                        
-                        // Угловые маркеры (прицел)
-                        ctx.shadowBlur = 0;
-                        ctx.strokeStyle = 'rgba(0, 212, 255, 0.8)';
-                        ctx.lineWidth = 2;
-                        const cornerLen = Math.min(sqSize * 0.2, 40);
-                        
-                        // Левый верхний угол
-                        ctx.beginPath();
-                        ctx.moveTo(sqX, sqY + cornerLen);
-                        ctx.lineTo(sqX, sqY);
-                        ctx.lineTo(sqX + cornerLen, sqY);
-                        // Правый верхний
-                        ctx.moveTo(sqX + sqSize - cornerLen, sqY);
-                        ctx.lineTo(sqX + sqSize, sqY);
-                        ctx.lineTo(sqX + sqSize, sqY + cornerLen);
-                        // Левый нижний
-                        ctx.moveTo(sqX, sqY + sqSize - cornerLen);
-                        ctx.lineTo(sqX, sqY + sqSize);
-                        ctx.lineTo(sqX + cornerLen, sqY + sqSize);
-                        // Правый нижний
-                        ctx.moveTo(sqX + sqSize - cornerLen, sqY + sqSize);
-                        ctx.lineTo(sqX + sqSize, sqY + sqSize);
-                        ctx.lineTo(sqX + sqSize, sqY + sqSize - cornerLen);
-                        ctx.stroke();
-                        
-                        // Центр (точка прицеливания)
-                        ctx.fillStyle = '#00ff88';
-                        ctx.shadowColor = 'rgba(0, 255, 136, 0.6)';
-                        ctx.shadowBlur = 10;
-                        ctx.beginPath();
-                        ctx.arc(cx * canvas.width, cy * canvas.height, 7, 0, Math.PI * 2);
-                        ctx.fill();
-                        
-                        // Сброс эффектов
-                        ctx.shadowBlur = 0;
-                        ctx.shadowColor = 'transparent';
-                        
-                        // Данные для отправки
-                        faceData = { 
-                            x: cx - 0.5,           // смещение от центра (-0.5..+0.5)
-                            y: cy - 0.5,
-                            w: bbox.width, 
-                            h: bbox.height,
-                            conf: detection.score?.[0] || 0,
-                            square: sizeNorm,
-                            ts: Date.now()
-                        };
-                        
-                        // Обновление UI
-                        const confPct = Math.round(faceData.conf * 100);
-                        faceBadge.textContent = `✅ Лицо ${confPct}%`;
-                        faceBadge.style.color = confPct > 70 ? '#00ff88' : '#ffaa00';
-                        document.getElementById('valX').textContent = faceData.x.toFixed(2);
-                        document.getElementById('valY').textContent = faceData.y.toFixed(2);
-                        
-                        // Авто-отправка в режиме auto
-                        if(currentMode === 'auto' && !testMode) {
-                            pub('face', faceData);
-                        }
-                        
-                    } else {
-                        // Лицо не обнаружено
-                        faceData = null;
-                        faceBadge.textContent = '🔍 Поиск...';
-                        faceBadge.style.color = '#ffaa00';
-                        
-                        // Анимация "поиска" на канвасе
-                        ctx.strokeStyle = 'rgba(255, 170, 0, 0.3)';
-                        ctx.lineWidth = 2;
-                        ctx.setLineDash([5, 5]);
-                        ctx.strokeRect(canvas.width*0.3, canvas.height*0.3, canvas.width*0.4, canvas.height*0.4);
-                        ctx.setLineDash([]);
-                    }
-                });
 
-                log('✅ MediaPipe загружен успешно', 'ok');
+                log('✅ MediaPipe AI успешно загружен', 'ok');
                 loadingMsg.style.display = 'none';
                 startDetectionLoop();
                 
             } catch(e) {
                 loadingMsg.style.display = 'none';
-                log(`❌ Ошибка MediaPipe: ${e.message}`, 'err');
+                const errMsg = e.message || 'Неизвестная ошибка инициализации';
+                log(`❌ Ошибка AI: ${errMsg}`, 'err');
+                console.error('MediaPipe Error Stack:', e);
                 faceBadge.textContent = '⚠️ AI ошибка';
                 faceBadge.style.color = '#ff4444';
-                
-                // Fallback: показываем заглушку
-                ctx.fillStyle = 'rgba(255, 68, 68, 0.1)';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                alert(`AI не загрузился:\n${errMsg}\n\n💡 Убедитесь, что сайт открыт через http://localhost или https://`);
             }
         }
 
@@ -608,20 +510,98 @@
             detectionRunning = true;
             
             async function processFrame() {
+                // Пропускаем кадр, если видео не готово или вкладка скрыта
                 if(video.readyState >= 2 && !video.paused && faceDetection && document.visibilityState === 'visible') {
                     try {
-                        await faceDetection.send({ image: video });
+                        // Новый API: передаём видео, получаем detections
+                        const results = await faceDetection.detect(video);
+                        processDetections(results);
                     } catch(e) {
-                        // Пропускаем проблемные фреймы
-                        if(e.message?.includes('tensor')) {
-                            console.warn('Frame skip:', e);
-                        }
+                        console.warn('⏭ Пропуск кадра:', e);
                     }
                 }
                 requestAnimationFrame(processFrame);
             }
             processFrame();
-            log('🔄 Цикл детекции запущен');
+            log('🔄 Цикл AI детекции запущен (Tasks Vision)', 'ok');
+        }
+
+        function processDetections(results) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if(results.detections?.length > 0) {
+                const det = results.detections[0];
+                const bbox = det.boundingBox; // {originX, originY, width, height} в пикселях
+                const conf = det.categories?.[0]?.score || 0;
+
+                // Координаты центра (в пикселях)
+                const cx = bbox.originX + bbox.width / 2;
+                const cy = bbox.originY + bbox.height / 2;
+
+                // === КВАДРАТ (по большей стороне bbox) ===
+                const sizePx = Math.max(bbox.width, bbox.height);
+                const half = sizePx / 2;
+                const sqX = cx - half;
+                const sqY = cy - half;
+                const pulse = 0.95 + 0.05 * Math.sin(Date.now() / 100);
+
+                // Рамка
+                ctx.strokeStyle = `rgba(0, 255, 136, ${0.7 + pulse * 0.3})`;
+                ctx.lineWidth = 3 * pulse;
+                ctx.shadowColor = 'rgba(0, 255, 136, 0.4)';
+                ctx.shadowBlur = 15 * pulse;
+                ctx.strokeRect(sqX, sqY, sizePx, sizePx);
+
+                // Угловые маркеры
+                ctx.shadowBlur = 0;
+                ctx.strokeStyle = 'rgba(0, 212, 255, 0.8)';
+                ctx.lineWidth = 2;
+                const cornerLen = Math.min(sizePx * 0.2, 40);
+                ctx.beginPath();
+                // 4 угла
+                ctx.moveTo(sqX, sqY + cornerLen); ctx.lineTo(sqX, sqY); ctx.lineTo(sqX + cornerLen, sqY);
+                ctx.moveTo(sqX + sizePx - cornerLen, sqY); ctx.lineTo(sqX + sizePx, sqY); ctx.lineTo(sqX + sizePx, sqY + cornerLen);
+                ctx.moveTo(sqX, sqY + sizePx - cornerLen); ctx.lineTo(sqX, sqY + sizePx); ctx.lineTo(sqX + cornerLen, sqY + sizePx);
+                ctx.moveTo(sqX + sizePx - cornerLen, sqY + sizePx); ctx.lineTo(sqX + sizePx, sqY + sizePx); ctx.lineTo(sqX + sizePx, sqY + sizePx - cornerLen);
+                ctx.stroke();
+
+                // Центр
+                ctx.fillStyle = '#00ff88';
+                ctx.shadowColor = 'rgba(0, 255, 136, 0.6)';
+                ctx.shadowBlur = 10;
+                ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2); ctx.fill();
+                ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+
+                // Формируем faceData в СТАРОМ формате (совместимо с ESP32/MCU)
+                faceData = { 
+                    x: (cx / canvas.width) - 0.5,   // -0.5..+0.5
+                    y: (cy / canvas.height) - 0.5,  // -0.5..+0.5
+                    w: bbox.width / canvas.width, 
+                    h: bbox.height / canvas.height,
+                    conf: conf,
+                    square: sizePx / canvas.width,
+                    ts: Date.now()
+                };
+
+                const confPct = Math.round(faceData.conf * 100);
+                faceBadge.textContent = `✅ Лицо ${confPct}%`;
+                faceBadge.style.color = confPct > 70 ? '#00ff88' : '#ffaa00';
+                document.getElementById('valX').textContent = faceData.x.toFixed(2);
+                document.getElementById('valY').textContent = faceData.y.toFixed(2);
+                
+                if(currentMode === 'auto' && !testMode) pub('face', faceData);
+                
+            } else {
+                faceData = null;
+                faceBadge.textContent = '🔍 Поиск...';
+                faceBadge.style.color = '#ffaa00';
+                // Пунктирный квадрат "поиска"
+                ctx.strokeStyle = 'rgba(255, 170, 0, 0.3)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([6, 4]);
+                ctx.strokeRect(canvas.width*0.25, canvas.height*0.25, canvas.width*0.5, canvas.height*0.5);
+                ctx.setLineDash([]);
+            }
         }
 
         // === ВИРТУАЛЬНЫЙ ДЖОЙСТИК ===
