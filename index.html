@@ -554,77 +554,59 @@
             }
         }
 
-        // === MEDIAPIPE - УЛУЧШЕННАЯ ЗАГРУЗКА ===
+                // === MEDIAPIPE — ИСПРАВЛЕННАЯ ЗАГРУЗКА ===
         async function loadMediaPipe() {
             const loadingEl = document.getElementById('loadingMsg');
             loadingEl.style.display = 'block';
-            updateLoading('Проверка окружения...');
+            updateLoading('Загрузка MediaPipe...', 'vision_bundle.mjs');
 
             try {
-                // 🔍 Проверка протокола
                 if (location.protocol === 'file:') {
-                    throw new Error('⛔ Откройте через http://localhost, а не file://');
+                    throw new Error('⛔ Запустите через http://localhost');
                 }
 
-                // 🔍 Проверка WebGL2
-                const testCanvas = document.createElement('canvas');
-                if(!testCanvas.getContext('webgl2')) {
-                    log('⚠️ WebGL2 не поддерживается, пробуем fallback', 'warn');
-                }
-
-                updateLoading('Загрузка MediaPipe библиотеки...', `v${mediaPipeVersion}`);
-                log(`🧠 Загрузка @mediapipe/tasks-vision@${mediaPipeVersion}...`);
+                log('🧠 Загрузка MediaPipe Vision Bundle...');
                 
-                // Динамический импорт с обработкой ошибок сети
-                let visionModule;
-                try {
-                    visionModule = await import(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${mediaPipeVersion}/+esm`);
-                    log('✅ Библиотека загружена', 'ok');
-                } catch(e) {
-                    log(`⚠️ Ошибка загрузки с jsdelivr, пробуем unpkg...`, 'warn');
-                    // Fallback на unpkg
-                    visionModule = await import(`https://unpkg.com/@mediapipe/tasks-vision@${mediaPipeVersion}/+esm`);
-                    log('✅ Загружено с unpkg', 'ok');
-                }
+                // 🔥 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: vision_bundle.mjs
+                await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs');
                 
-                const { FaceDetector, FilesetResolver } = visionModule;
+                const { FaceDetector, FilesetResolver } = window.vision;
+                if(!FaceDetector) throw new Error('vision_bundle не загрузился корректно');
                 
-                updateLoading('Инициализация WASM...', 'Загрузка моделей...');
-                log('📦 Инициализация FilesetResolver...');
+                log('✅ Библиотека загружена', 'ok');
+                updateLoading('Инициализация WASM...');
                 
-                const wasmUrl = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${mediaPipeVersion}/wasm`;
+                const filesetResolver = await FilesetResolver.forVisionTasks(
+                    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+                );
                 
-                let filesetResolver;
-                try {
-                    filesetResolver = await FilesetResolver.forVisionTasks(wasmUrl);
-                    log('✅ WASM resolver готов', 'ok');
-                } catch(e) {
-                    log(`⚠️ Ошибка с jsdelivr WASM, пробуем unpkg...`, 'warn');
-                    const fallbackUrl = `https://unpkg.com/@mediapipe/tasks-vision@${mediaPipeVersion}/wasm`;
-                    filesetResolver = await FilesetResolver.forVisionTasks(fallbackUrl);
-                    log('✅ WASM загружен с unpkg', 'ok');
-                }
-
-                updateLoading('Загрузка модели детекции лиц...', 'blaze_face_short_range.tflite');
-                log('🎭 Создание FaceDetector...');
+                updateLoading('Загрузка модели лица...');
                 
                 faceDetection = await FaceDetector.createFromOptions(filesetResolver, {
                     baseOptions: {
-                        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite`,
-                        delegate: "CPU"
+                        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',
+                        delegate: 'CPU'
                     },
-                    runningMode: "VIDEO",
+                    runningMode: 'VIDEO',
                     minDetectionConfidence: 0.5,
                     minSuppressionThreshold: 0.3
                 });
 
-                log('✅ MediaPipe AI успешно инициализирован', 'ok');
+                log('✅ AI готов к работе', 'ok');
                 loadingEl.style.display = 'none';
-                faceBadge.textContent = '🔍 Поиск лица...';
+                faceBadge.textContent = '🔍 Поиск...';
                 faceBadge.style.color = '#ffaa00';
                 
-                // Запускаем детекцию только если видео уже готово
-                if(video.readyState >= 2 && !detectionRunning) {
+                if(video.readyState >= 2 && !detectionRunning) startDetectionLoop();
+                
+            } catch(e) {
+                console.error('AI Error:', e);
+                log(`❌ Ошибка: ${e.message}`, 'err');
+                showLoadingError(e.message || 'Неизвестная ошибка');
+                faceBadge.textContent = '⚠️ AI ошибка';
+                faceBadge.style.color = '#ff4444';
+            }
+        }
                     startDetectionLoop();
                 }
                 
