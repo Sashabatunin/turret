@@ -1,104 +1,81 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Pan-Tilt AI Tracker</title>
-  <style>
-    body { margin: 0; background: #000; overflow: hidden; font-family: system-ui; }
-    #canvas { width: 100vw; height: 100vh; display: block; transform: scaleX(-1); }
-    #ui { position: fixed; top: 10px; left: 10px; right: 10px; background: rgba(0,0,0,0.8); 
-          color: #0f0; padding: 10px; border-radius: 10px; z-index: 10; }
-    input, button { background: #222; color: #fff; border: 1px solid #555; padding: 6px 8px; margin: 2px; border-radius: 4px; }
-    button { cursor: pointer; background: #004400; }
-    .row { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
-    #status { margin-top: 5px; font-size: 13px; }
-  </style>
-</head>
-<body>
-  <video id="vid" style="display:none" autoplay playsinline></video>
-  <canvas id="canvas"></canvas>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<script>
+let detector, mqtt, vid, ctx, canvas;
+let tracking = false, lastSend = 0;
+const logEl = document.getElementById('log');
+const statusEl = document.getElementById('status');
+
+function log(msg, type='info') {
+  const color = type==='err' ? '#f55' : type==='warn' ? '#fa0' : '#8f8';
+  logEl.innerHTML = `<div style="color:${color}">[${new Date().toLocaleTimeString()}] ${msg}</div>` + logEl.innerHTML;
+}
+
+window.init = async () => {
+  try {
+    log("1️⃣ Камера...");
+    vid = document.getElementById('vid');
+    canvas = document.getElementById('canvas');
+    ctx = canvas.getContext('2d');
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: 320, height: 240 } });
+    vid.srcObject = stream; await vid.play();
+    canvas.width = 320; canvas.height = 240;
+    log("✅ Камера OK");
+
+    const host = document.getElementById('host').value.trim();
+    const user = document.getElementById('user').value.trim();
+    const pass = document.getElementById('pass').value.trim();
+    if (!host || !user) throw new Error("Заполните MQTT Host и Username!");
+
+    log(`2️⃣ MQTT: ${host}:8884`);
+    mqtt = new Paho.MQTT.Client(host, 8884, "/mqtt", `web_pt_${Date.now()}`);
+    mqtt.onConnectionLost = (r) => { log("🔴 MQTT Lost", 'err'); statusEl.innerText="🔴 MQTT Lost"; };
+    mqtt.connect({ userName: user, password: pass, useSSL: true, timeout: 10,
+      onSuccess: () => { log("✅ MQTT OK"); loadAI(); },
+      onFailure: (e) => { log(`❌ MQTT: ${e.errorMessage}`, 'err'); statusEl.innerText="❌ MQTT Failed"; }
+    });
+  } catch(e) { log(`❌ ${e.message}`, 'err'); }
+};
+
+async function loadAI() {
+  try {
+    log("3️⃣ Загрузка COCO-SSD (оптимизировано для мобильных)...");
+    statusEl.innerText = "⏳ Загружаю AI...";
+    detector = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+    log("✅ AI готов!");
+    statusEl.innerText = "🟢 Трекинг запущен!";
+    tracking = true; loop();
+  } catch(e) { log(`❌ AI: ${e.message}`, 'err'); }
+}
+
+async function loop() {
+  if (!tracking) return;
+  requestAnimationFrame(loop);
+  ctx.drawImage(vid, 0, 0, 320, 240);
   
-  <div id="ui">
-    <div class="row">
-      <input id="host" placeholder="MQTT Host" value="your-cluster.s1.eu.hivemq.cloud">
-      <input id="user" placeholder="User" value="your_user">
-      <input id="pass" type="password" placeholder="Pass" value="your_pass">
-      <button onclick="init()">▶ СТАРТ</button>
-    </div>
-    <div id="status">⏳ Ожидание...</div>
-  </div>
+  try {
+    const preds = await detector.detect(canvas);
+    if (preds.length === 0) return;
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
-  <script type="module">
-    import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2';
+    // Берем первый объект с уверенностью > 35%
+    const obj = preds.find(p => p.score > 0.35) || preds[0];
+    if (obj.score < 0.35) return;
 
-    let mqtt, detector, vid, ctx, canvas;
-    let tracking = false, lastSend = 0;
+    const cx = obj.bbox[0] + obj.bbox[2]/2;
+    const cy = obj.bbox[1] + obj.bbox[3]/2;
+    const ex = cx - 160;
+    const ey = cy - 120;
 
-    window.init = async () => {
-      vid = document.getElementById('vid');
-      canvas = document.getElementById('canvas');
-      ctx = canvas.getContext('2d');
-      
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: 'environment', width: 320, height: 240 } 
-        });
-        vid.srcObject = stream; await vid.play();
-        canvas.width = 320; canvas.height = 240;
-      } catch(e) { return alert('Камера недоступна: ' + e.message); }
+    ctx.strokeStyle = '#0f0'; ctx.lineWidth = 2;
+    ctx.strokeRect(obj.bbox[0], obj.bbox[1], obj.bbox[2], obj.bbox[3]);
+    ctx.fillStyle = '#0f0'; ctx.font = '12px monospace';
+    ctx.fillText(`${obj.class} ${Math.round(obj.score*100)}%`, obj.bbox[0], obj.bbox[1]-5);
 
-      mqtt = new Paho.MQTT.Client(document.getElementById('host').value, 8884, "/mqtt", "web_pt_" + Date.now());
-      mqtt.onConnectionLost = () => document.getElementById('status').innerText = "🔴 MQTT Lost";
-      
-      mqtt.connect({
-        userName: document.getElementById('user').value,
-        password: document.getElementById('pass').value,
-        useSSL: true,
-        onSuccess: () => {
-          document.getElementById('status').innerText = "🟢 MQTT Ready. Loading AI...";
-          loadAI();
-        }
-      });
-    };
-
-    async function loadAI() {
-      detector = await pipeline('object-detection', 'Xenova/yolov8n', { device: 'webgpu' });
-      document.getElementById('status').innerText = "🟢 AI Loaded. Tracking started.";
-      tracking = true; loop();
+    const now = Date.now();
+    if (now - lastSend > 100 && mqtt.isConnected()) {
+      mqtt.send(new Paho.MQTT.Message(JSON.stringify({ ex, ey, conf: obj.score })).destinationName="servo/control");
+      lastSend = now;
     }
-
-    async function loop() {
-      if (!tracking) return;
-      requestAnimationFrame(loop);
-      ctx.drawImage(vid, 0, 0, 320, 240);
-      
-      const res = await detector(canvas, { threshold: 0.35, limit: 1 });
-      if (res.length === 0) return;
-
-      const o = res[0];
-      const cx = o.box.x + o.box.width/2;
-      const cy = o.box.y + o.box.height/2;
-      const ex = cx - 160;
-      const ey = cy - 120;
-
-      // Визуализация
-      ctx.strokeStyle = '#0f0'; ctx.lineWidth = 2;
-      ctx.strokeRect(o.box.x, o.box.y, o.box.width, o.box.height);
-      ctx.beginPath(); ctx.arc(160, 120, 4, 0, Math.PI*2); ctx.stroke();
-      ctx.fillStyle = '#0f0'; ctx.font = '12px monospace';
-      ctx.fillText(`#${Math.round(o.score*100)}%`, o.box.x, o.box.y-5);
-
-      // Отправка 10 раз в секунду
-      const now = Date.now();
-      if (now - lastSend > 100 && mqtt.isConnected()) {
-        const msg = new Paho.MQTT.Message(JSON.stringify({ ex: ex, ey: ey, conf: o.score }));
-        msg.destinationName = "servo/control";
-        mqtt.send(msg);
-        lastSend = now;
-      }
-    }
-  </script>
-</body>
-</html>
+  } catch(e) { console.error("Detect err:", e); }
+}
+</script>
