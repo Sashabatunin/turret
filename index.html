@@ -8,84 +8,36 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; touch-action: none; }
     #canvas { width: 100vw; height: 100vh; display: block; }
-    
-    /* Полоска статуса (всегда видна, но компактная) */
-    #statusBar {
-      position: fixed; top: 10px; left: 10px; right: 10px;
-      background: rgba(0,0,0,0.6); color: #0f0; padding: 8px 12px;
-      border-radius: 8px; z-index: 1000; text-align: center;
-      font-size: 12px; backdrop-filter: blur(4px);
-      border: 1px solid rgba(0,255,0,0.3);
-      transition: opacity 0.3s;
-    }
-
-    /* Всплывающая панель настроек */
-    #configPanel {
-      position: fixed; inset: 0;
-      background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);
-      z-index: 1500; display: flex; flex-direction: column;
-      padding: 20px; overflow-y: auto;
-      transform: translateY(100%); opacity: 0; pointer-events: none;
-      transition: transform 0.3s ease, opacity 0.3s ease;
-    }
-    #configPanel.open {
-      transform: translateY(0); opacity: 1; pointer-events: auto;
-    }
-
+    #statusBar { position: fixed; top: 10px; left: 10px; right: 10px; background: rgba(0,0,0,0.6); color: #0f0; padding: 8px 12px; border-radius: 8px; z-index: 1000; text-align: center; font-size: 12px; backdrop-filter: blur(4px); border: 1px solid rgba(0,255,0,0.3); transition: opacity 0.3s; }
+    #configPanel { position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 1500; display: flex; flex-direction: column; padding: 20px; overflow-y: auto; transform: translateY(100%); opacity: 0; pointer-events: none; transition: transform 0.3s ease, opacity 0.3s ease; }
+    #configPanel.open { transform: translateY(0); opacity: 1; pointer-events: auto; }
     .row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-    .row input {
-      flex: 1; min-width: 100px; background: rgba(30,30,30,0.9); color: #0f0;
-      border: 1px solid #444; padding: 10px; border-radius: 8px;
-      font-size: 14px; outline: none;
-    }
+    .row input { flex: 1; min-width: 100px; background: rgba(30,30,30,0.9); color: #0f0; border: 1px solid #444; padding: 10px; border-radius: 8px; font-size: 14px; outline: none; }
     .row input:focus { border-color: #0f0; box-shadow: 0 0 0 2px rgba(0,255,0,0.2); }
-    
-    button {
-      background: #005500; color: #fff; border: none; padding: 12px;
-      border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px;
-      transition: transform 0.1s, background 0.2s;
-    }
+    button { background: #005500; color: #fff; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; transition: transform 0.1s, background 0.2s; }
     button:active { transform: scale(0.96); background: #003300; }
     button.secondary { background: #333; }
     button.danger { background: #660000; }
     button.full { width: 100%; margin-top: 10px; }
-
-    #log {
-      margin-top: 15px; max-height: 25vh; background: rgba(0,0,0,0.5);
-      padding: 10px; border-radius: 8px; font-family: monospace; font-size: 11px;
-      color: #999; overflow-y: auto; line-height: 1.3;
-    }
+    #log { margin-top: 15px; max-height: 25vh; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; font-family: monospace; font-size: 11px; color: #999; overflow-y: auto; line-height: 1.3; }
     .log-item { margin: 2px 0; }
     .log-err { color: #f55; } .log-warn { color: #fa0; } .log-ok { color: #8f8; }
-
-    /* Кнопка открытия настроек */
-    #toggleBtn {
-      position: fixed; bottom: 20px; right: 20px; z-index: 2000;
-      width: 50px; height: 50px; border-radius: 50%;
-      background: #005500; color: #fff; border: 2px solid rgba(0,255,0,0.4);
-      font-size: 20px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.6);
-      display: flex; align-items: center; justify-content: center;
-      transition: transform 0.2s, background 0.2s;
-    }
+    #toggleBtn { position: fixed; bottom: 20px; right: 20px; z-index: 2000; width: 50px; height: 50px; border-radius: 50%; background: #005500; color: #fff; border: 2px solid rgba(0,255,0,0.4); font-size: 20px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; transition: transform 0.2s, background 0.2s; }
     #toggleBtn:active { transform: scale(0.9); background: #003300; }
-
-    #stats {
-      position: fixed; bottom: 20px; left: 20px;
-      background: rgba(0,0,0,0.6); color: #0f0; padding: 6px 10px;
-      border-radius: 6px; font-size: 11px; font-family: monospace;
-      z-index: 1000; backdrop-filter: blur(4px);
-    }
+    #stats { position: fixed; bottom: 20px; left: 20px; background: rgba(0,0,0,0.6); color: #0f0; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-family: monospace; z-index: 1000; backdrop-filter: blur(4px); }
+    .threshold-box { margin-top: 15px; background: rgba(30,30,30,0.6); padding: 12px; border-radius: 8px; border: 1px solid rgba(0,255,0,0.2); }
+    .threshold-box label { display: flex; justify-content: space-between; font-size: 12px; color: #0f0; margin-bottom: 6px; }
+    input[type="range"] { width: 100%; accent-color: #0f0; height: 6px; }
+    .threshold-hint { font-size: 10px; color: #888; margin-top: 5px; }
     .hidden { display: none !important; }
   </style>
 </head>
 <body>
   <video id="vid" style="display:none" autoplay playsinline muted></video>
   <canvas id="canvas"></canvas>
-  
   <div id="statusBar">📴 Готов к запуску</div>
   <div id="stats" class="hidden">FPS:<span id="fps">0</span> | Obj:<span id="objCount">0</span> | Sent:<span id="sentCount">0</span></div>
 
-  <!-- Всплывающая панель настроек -->
   <div id="configPanel">
     <h2 style="color:#0f0; margin-bottom: 15px; text-align:center;">⚙️ Настройки трекера</h2>
     <div class="row"><input id="mqttHost" placeholder="MQTT Host" value="367d7905056a451cac7755db6f5bcc81.s1.eu.hivemq.cloud"></div>
@@ -97,6 +49,7 @@
       <input id="mqttPass" type="password" placeholder="Password">
       <input id="mqttTopic" placeholder="Topic" value="servo/control">
     </div>
+    
     <div style="display: flex; gap: 8px; margin-top: 10px;">
       <button id="btnStart" onclick="init()" style="flex:1;">🚀 СТАРТ</button>
       <button id="btnStop" class="hidden danger" onclick="stop()" style="flex:1;">⏹ СТОП</button>
@@ -105,6 +58,17 @@
       <button class="secondary" onclick="toggleMirror()" style="flex:1;">🪞 Зеркало: <span id="mirrorState">OFF</span></button>
       <button class="secondary" onclick="resetServos()" style="flex:1;">🔄 Центр</button>
     </div>
+
+    <!-- 🔽 НОВЫЙ БЛОК: ПОРОГ УВЕРЕННОСТИ -->
+    <div class="threshold-box">
+      <label>
+        <span>🎯 Порог уверенности</span>
+        <span id="thresholdValue">35%</span>
+      </label>
+      <input id="thresholdSlider" type="range" min="10" max="90" value="35" step="5">
+      <div class="threshold-hint">Меньше = больше объектов (возможен шум). Больше = стабильнее, но реже детекция.</div>
+    </div>
+
     <div id="log"></div>
     <button class="full secondary" onclick="toggleConfig()">✖ Закрыть настройки</button>
   </div>
@@ -122,9 +86,9 @@
     let lastSend = 0, frameCount = 0, lastFpsTime = 0, sentCount = 0;
     let isMirrored = false;
     let connectOptions = {};
+    let CONF_THRESHOLD = 0.35; // ✅ Теперь изменяемый
     
     const SEND_INTERVAL = 100;
-    const CONF_THRESHOLD = 0.35;
     const CANVAS_WIDTH = 320;
     const CANVAS_HEIGHT = 240;
 
@@ -134,7 +98,9 @@
       stats: document.getElementById('stats'), fps: document.getElementById('fps'),
       objCount: document.getElementById('objCount'), sentCount: document.getElementById('sentCount'),
       mirrorState: document.getElementById('mirrorState'),
-      configPanel: document.getElementById('configPanel')
+      configPanel: document.getElementById('configPanel'),
+      thresholdSlider: document.getElementById('thresholdSlider'),
+      thresholdValue: document.getElementById('thresholdValue')
     };
 
     // ================= ЛОГИРОВАНИЕ =================
@@ -150,9 +116,7 @@
     function updateStatus(msg) { ui.status.textContent = msg; }
 
     // ================= УПРАВЛЕНИЕ UI =================
-    function toggleConfig() {
-      ui.configPanel.classList.toggle('open');
-    }
+    function toggleConfig() { ui.configPanel.classList.toggle('open'); }
     function toggleMirror() {
       isMirrored = !isMirrored;
       canvas.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
@@ -167,6 +131,13 @@
         log('🔄 Отправлена команда: центр', 'ok');
       } else log('⚠️ MQTT не подключен', 'warn');
     }
+
+    // ✅ СЛУШАТЕЛЬ СЛАЙДЕРА ПОРОГА
+    ui.thresholdSlider.addEventListener('input', (e) => {
+      CONF_THRESHOLD = parseInt(e.target.value) / 100;
+      ui.thresholdValue.textContent = e.target.value + '%';
+      log(`🎯 Порог изменён на ${e.target.value}%`, 'info');
+    });
 
     // ================= ПРЕДУПРЕЖДЕНИЕ О ФОНЕ =================
     document.addEventListener('visibilitychange', () => {
@@ -187,7 +158,6 @@
       try {
         ui.btnStart.classList.add('hidden'); ui.btnStop.classList.remove('hidden'); ui.stats.classList.remove('hidden');
         updateStatus('📷 Камера...'); log('Запрос камеры...', 'info');
-        
         vid = document.getElementById('vid'); canvas = document.getElementById('canvas'); ctx = canvas.getContext('2d');
         const stream = await navigator.mediaDevices.getUserMedia({ 
           video: { facingMode: 'environment', width: { ideal: 320 }, height: { ideal: 240 } }, audio: false 
@@ -210,28 +180,19 @@
         connectOptions = {
           timeout: 30, keepAliveInterval: 30, cleanSession: true,
           useSSL: location.protocol === 'https:', mqttVersion: 4,
-          onSuccess: () => {
-            log('✅ MQTT подключен', 'ok'); updateStatus('⏳ AI...');
-            mqtt.subscribe(topic); loadAI();
-          },
-          onFailure: (res) => {
-            log(`❌ MQTT: ${res.errorMessage} (code: ${res.errorCode})`, 'err');
-            updateStatus('❌ MQTT Failed');
-            setTimeout(() => { if (!mqtt.isConnected()) mqtt.connect(connectOptions); }, 3000);
-          }
+          onSuccess: () => { log('✅ MQTT подключен', 'ok'); updateStatus('⏳ AI...'); mqtt.subscribe(topic); loadAI(); },
+          onFailure: (res) => { log(`❌ MQTT: ${res.errorMessage} (code: ${res.errorCode})`, 'err'); updateStatus('❌ MQTT Failed'); setTimeout(() => { if (!mqtt.isConnected()) mqtt.connect(connectOptions); }, 3000); }
         };
         if (user) { connectOptions.userName = user; connectOptions.password = pass; }
 
         mqtt.onConnectionLost = (res) => {
           log(`🔴 MQTT отключен: ${res.errorMessage} (code: ${res.errorCode})`, 'err');
           updateStatus(`🔴 Lost: ${res.errorMessage}`);
-          if ([0, 1, 3, 6, 7].includes(res.errorCode)) {
-            setTimeout(() => { if (!mqtt.isConnected()) mqtt.connect(connectOptions); }, 3000);
-          }
+          if ([0, 1, 3, 6, 7].includes(res.errorCode)) setTimeout(() => { if (!mqtt.isConnected()) mqtt.connect(connectOptions); }, 3000);
         };
         
         mqtt.connect(connectOptions);
-        toggleConfig(); // Автоматически закрываем панель после старта
+        toggleConfig();
       } catch (e) { 
         log(`❌ ${e.message}`, 'err'); updateStatus(`❌ ${e.message}`); 
         ui.btnStart.classList.remove('hidden'); ui.btnStop.classList.add('hidden'); 
@@ -258,7 +219,7 @@
       ctx.drawImage(vid, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
       try {
         const preds = await detector.detect(canvas);
-        const valid = preds.filter(p => p.score >= CONF_THRESHOLD);
+        const valid = preds.filter(p => p.score >= CONF_THRESHOLD); // ✅ Использует динамический порог
         ui.objCount.textContent = valid.length;
         if (valid.length === 0) { drawCrosshair('#f00'); return; }
         
@@ -299,7 +260,7 @@
       ctx.fillStyle = '#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
       ctx.fillStyle = '#666'; ctx.font = '16px monospace'; ctx.textAlign = 'center';
       ctx.fillText('Остановлено', canvas.width/2, canvas.height/2); ctx.textAlign = 'left';
-      toggleConfig(); // Возвращаем панель настроек
+      toggleConfig();
     }
 
     window.onerror = (msg, url, line) => { log(`💥 ${msg} (L${line})`, 'err'); return false; };
