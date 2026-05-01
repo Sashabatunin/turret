@@ -1,4 +1,38 @@
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Pan-Tilt AI Tracker</title>
+  <style>
+    body { margin: 0; background: #000; overflow: hidden; font-family: system-ui; }
+    #canvas { width: 100vw; height: 100vh; display: block; transform: scaleX(-1); }
+    #ui { position: fixed; top: 10px; left: 10px; right: 10px; background: rgba(0,0,0,0.85); 
+          color: #0f0; padding: 12px; border-radius: 10px; z-index: 10; font-size: 14px; }
+    input, button { background: #222; color: #fff; border: 1px solid #555; padding: 8px; margin: 4px 0; width: 100%; box-sizing: border-box; border-radius: 6px; }
+    button { background: #005500; font-weight: bold; cursor: pointer; }
+    button:active { background: #003300; }
+    .row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .row input { flex: 1; min-width: 100px; }
+    #log { max-height: 120px; overflow-y: auto; font-size: 12px; color: #aaa; margin-top: 8px; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <video id="vid" style="display:none" autoplay playsinline></video>
+  <canvas id="canvas"></canvas>
+  
+  <div id="ui">
+    <div class="row">
+      <input id="host" placeholder="MQTT Host (wss://...)" value="your-cluster.s1.eu.hivemq.cloud">
+      <input id="user" placeholder="Username" value="">
+      <input id="pass" type="password" placeholder="Password" value="">
+    </div>
+    <button onclick="init()">🚀 ЗАПУСТИТЬ</button>
+    <div id="status">📴 Готов к запуску</div>
+    <div id="log"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
 <script>
 let detector, mqtt, vid, ctx, canvas;
@@ -79,3 +113,5 @@ async function loop() {
   } catch(e) { console.error("Detect err:", e); }
 }
 </script>
+</body>
+</html>
