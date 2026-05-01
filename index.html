@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Pan-Tilt AI Tracker</title>
+  <title>Pan-Tilt AI Tracker v2</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; touch-action: none; }
     #canvas { width: 100vw; height: 100vh; display: block; }
-    #statusBar { position: fixed; top: 10px; left: 10px; right: 10px; background: rgba(0,0,0,0.6); color: #0f0; padding: 8px 12px; border-radius: 8px; z-index: 1000; text-align: center; font-size: 12px; backdrop-filter: blur(4px); border: 1px solid rgba(0,255,0,0.3); transition: opacity 0.3s; }
+    #statusBar { position: fixed; top: 10px; left: 10px; right: 10px; background: rgba(0,0,0,0.6); color: #0f0; padding: 8px 12px; border-radius: 8px; z-index: 1000; text-align: center; font-size: 12px; backdrop-filter: blur(4px); border: 1px solid rgba(0,255,0,0.3); }
     #configPanel { position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 1500; display: flex; flex-direction: column; padding: 20px; overflow-y: auto; transform: translateY(100%); opacity: 0; pointer-events: none; transition: transform 0.3s ease, opacity 0.3s ease; }
     #configPanel.open { transform: translateY(0); opacity: 1; pointer-events: auto; }
     .row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
@@ -22,22 +22,22 @@
     #log { margin-top: 15px; max-height: 25vh; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; font-family: monospace; font-size: 11px; color: #999; overflow-y: auto; line-height: 1.3; }
     .log-item { margin: 2px 0; }
     .log-err { color: #f55; } .log-warn { color: #fa0; } .log-ok { color: #8f8; }
-    #toggleBtn { position: fixed; bottom: 20px; right: 20px; z-index: 2000; width: 50px; height: 50px; border-radius: 50%; background: #005500; color: #fff; border: 2px solid rgba(0,255,0,0.4); font-size: 20px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; transition: transform 0.2s, background 0.2s; }
-    #toggleBtn:active { transform: scale(0.9); background: #003300; }
-    #stats { position: fixed; bottom: 20px; left: 20px; background: rgba(0,0,0,0.6); color: #0f0; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-family: monospace; z-index: 1000; backdrop-filter: blur(4px); }
     
-    /* 🔽 Стили для D-Pad и переключателя режима */
-    .mode-toggle { margin-top: 12px; display: flex; align-items: center; justify-content: center; gap: 10px; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 8px; }
-    .mode-toggle span { color: #aaa; font-size: 13px; }
-    #modeBtn { width: auto; padding: 8px 16px; font-size: 13px; background: #333; }
+    /* 🔽 Плавающие кнопки справа внизу */
+    #floatingControls { position: fixed; bottom: 20px; right: 20px; z-index: 2000; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+    .float-btn { width: 52px; height: 52px; border-radius: 50%; background: #005500; color: #fff; border: 2px solid rgba(0,255,0,0.4); font-size: 20px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; transition: transform 0.2s, background 0.2s; }
+    .float-btn:active { transform: scale(0.9); background: #003300; }
+    #modeBtn { background: #333; font-size: 16px; }
     #modeBtn.auto { background: #005500; }
     #modeBtn.manual { background: #554400; }
-    
-    #dpad { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 1100; display: flex; flex-direction: column; align-items: center; gap: 6px; transition: opacity 0.2s; }
+
+    /* Виртуальный D-Pad */
+    #dpad { position: fixed; bottom: 160px; left: 50%; transform: translateX(-50%); z-index: 1100; display: flex; flex-direction: column; align-items: center; gap: 6px; transition: opacity 0.2s; }
     .dpad-row { display: flex; gap: 10px; }
     .dpad-btn { width: 64px; height: 64px; border-radius: 14px; background: rgba(0,60,0,0.75); border: 2px solid rgba(0,255,0,0.5); color: #0f0; font-size: 26px; cursor: pointer; touch-action: none; user-select: none; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
     .dpad-btn:active { background: rgba(0,140,0,0.8); transform: scale(0.92); }
-    
+
+    #stats { position: fixed; bottom: 20px; left: 20px; background: rgba(0,0,0,0.6); color: #0f0; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-family: monospace; z-index: 1000; backdrop-filter: blur(4px); }
     .threshold-box { margin-top: 15px; background: rgba(30,30,30,0.6); padding: 12px; border-radius: 8px; border: 1px solid rgba(0,255,0,0.2); }
     .threshold-box label { display: flex; justify-content: space-between; font-size: 12px; color: #0f0; margin-bottom: 6px; }
     input[type="range"] { width: 100%; accent-color: #0f0; height: 6px; }
@@ -51,7 +51,7 @@
   <div id="statusBar">📴 Готов к запуску</div>
   <div id="stats" class="hidden">FPS:<span id="fps">0</span> | Obj:<span id="objCount">0</span> | Sent:<span id="sentCount">0</span></div>
 
-  <!-- Виртуальный D-Pad для ручного управления -->
+  <!-- Виртуальный D-Pad -->
   <div id="dpad" class="hidden">
     <div class="dpad-row"><button class="dpad-btn" data-dir="up">▲</button></div>
     <div class="dpad-row">
@@ -61,6 +61,13 @@
     <div class="dpad-row"><button class="dpad-btn" data-dir="down">▼</button></div>
   </div>
 
+  <!-- Плавающие кнопки -->
+  <div id="floatingControls">
+    <button id="modeBtn" class="float-btn auto" onclick="toggleMode()">🤖</button>
+    <button id="toggleBtn" class="float-btn" onclick="toggleConfig()">⚙️</button>
+  </div>
+
+  <!-- Панель настроек -->
   <div id="configPanel">
     <h2 style="color:#0f0; margin-bottom: 15px; text-align:center;">⚙️ Настройки трекера</h2>
     <div class="row"><input id="mqttHost" placeholder="MQTT Host" value="367d7905056a451cac7755db6f5bcc81.s1.eu.hivemq.cloud"></div>
@@ -78,15 +85,6 @@
       <button id="btnStop" class="hidden danger" onclick="stop()" style="flex:1;">⏹ СТОП</button>
     </div>
 
-    <div class="mode-toggle">
-      <span>Режим:</span>
-      <button id="modeBtn" class="auto" onclick="toggleMode()">🤖 Авто</button>
-    </div>
-    <div style="display: flex; gap: 8px; margin-top: 8px;">
-      <button class="secondary" onclick="toggleMirror()" style="flex:1;">🪞 Зеркало: <span id="mirrorState">OFF</span></button>
-      <button class="secondary" onclick="resetServos()" style="flex:1;">🔄 Центр</button>
-    </div>
-
     <div class="threshold-box">
       <label><span>🎯 Порог уверенности</span><span id="thresholdValue">35%</span></label>
       <input id="thresholdSlider" type="range" min="10" max="90" value="35" step="5">
@@ -97,13 +95,11 @@
     <button class="full secondary" onclick="toggleConfig()">✖ Закрыть настройки</button>
   </div>
 
-  <button id="toggleBtn" onclick="toggleConfig()">⚙️</button>
+  <!-- Библиотеки -->
+  <script type="module">
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2';
+    import { Paho } from 'https://cdn.jsdelivr.net/npm/paho-mqtt@1.1.0/paho-mqtt.min.js';
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
-
-  <script>
     // ================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =================
     let detector, mqtt, vid, ctx, canvas;
     let tracking = false, controlMode = 'auto';
@@ -116,92 +112,72 @@
     const CANVAS_WIDTH = 320;
     const CANVAS_HEIGHT = 240;
 
+    // Оптимизация окружения
+    env.backends.onnx.wasm.numThreads = 1;
+    env.allowLocalModels = false;
+
     const ui = {
       status: document.getElementById('statusBar'), log: document.getElementById('log'),
       btnStart: document.getElementById('btnStart'), btnStop: document.getElementById('btnStop'),
       stats: document.getElementById('stats'), fps: document.getElementById('fps'),
       objCount: document.getElementById('objCount'), sentCount: document.getElementById('sentCount'),
-      mirrorState: document.getElementById('mirrorState'), configPanel: document.getElementById('configPanel'),
+      configPanel: document.getElementById('configPanel'),
       thresholdSlider: document.getElementById('thresholdSlider'), thresholdValue: document.getElementById('thresholdValue'),
       modeBtn: document.getElementById('modeBtn'), dpad: document.getElementById('dpad')
     };
 
-    function log(msg, type = 'info') {
+    window.log = (msg, type = 'info') => {
       const time = new Date().toLocaleTimeString();
       const cls = type === 'err' ? 'log-err' : type === 'warn' ? 'log-warn' : 'log-ok';
       const div = document.createElement('div');
       div.className = `log-item ${cls}`; div.textContent = `[${time}] ${msg}`;
       ui.log.insertBefore(div, ui.log.firstChild);
       while (ui.log.children.length > 20) ui.log.removeChild(ui.log.lastChild);
-      console.log(`[${type.toUpperCase()}] ${msg}`);
-    }
-    function updateStatus(msg) { ui.status.textContent = msg; }
-    function toggleConfig() { ui.configPanel.classList.toggle('open'); }
-    function toggleMirror() {
-      isMirrored = !isMirrored; canvas.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
-      ui.mirrorState.textContent = isMirrored ? 'ON' : 'OFF'; ui.mirrorState.style.color = isMirrored ? '#0f0' : '#888';
-    }
-    function resetServos() {
+    };
+    window.updateStatus = (msg) => { ui.status.textContent = msg; };
+    window.toggleConfig = () => { ui.configPanel.classList.toggle('open'); };
+    window.resetServos = () => {
       if (mqtt?.isConnected()) {
-        mqtt.send(new Paho.MQTT.Message(JSON.stringify({ ex: 0, ey: 0, conf: 1.0, cmd: 'center' })).destinationName = document.getElementById('mqttTopic').value.trim() || 'servo/control');
-        log('🔄 Команда: центр', 'ok');
+        const msg = new Paho.MQTT.Message(JSON.stringify({ ex: 0, ey: 0, conf: 1.0, cmd: 'center' }));
+        msg.destinationName = document.getElementById('mqttTopic').value.trim() || 'servo/control';
+        mqtt.send(msg); log('🔄 Команда: центр', 'ok');
       }
-    }
+    };
 
     // ================= ПЕРЕКЛЮЧЕНИЕ РЕЖИМОВ =================
-    function toggleMode() {
+    window.toggleMode = () => {
       controlMode = controlMode === 'auto' ? 'manual' : 'auto';
       const btn = ui.modeBtn;
-      
       if (controlMode === 'manual') {
-        btn.textContent = '🎮 Ручной'; btn.className = 'manual';
+        btn.textContent = '🎮'; btn.className = 'float-btn manual';
         ui.dpad.classList.remove('hidden');
-        tracking = false; // Останавливаем AI цикл
-        stopManualSend();
-        updateStatus('🎮 Ручное управление');
-        log('🔧 Переход в ручной режим', 'info');
+        tracking = false; stopManualSend();
+        updateStatus('🎮 Ручное управление'); log('🔧 Переход в ручной режим', 'info');
       } else {
-        btn.textContent = '🤖 Авто'; btn.className = 'auto';
-        ui.dpad.classList.add('hidden');
-        stopManualSend();
-        tracking = true; // Возвращаем AI
-        updateStatus('🟢 ТРЕКИНГ АКТИВЕН');
-        log('🤖 Переход в авто режим', 'info');
-        lastFpsTime = performance.now();
-        loop(); // Перезапускаем цикл
+        btn.textContent = '🤖'; btn.className = 'float-btn auto';
+        ui.dpad.classList.add('hidden'); stopManualSend();
+        tracking = true; updateStatus('🟢 ТРЕКИНГ АКТИВЕН');
+        log('🤖 Переход в авто режим', 'info'); lastFpsTime = performance.now(); loop();
       }
-    }
+    };
 
-    // ================= РУЧНОЕ УПРАВЛЕНИЕ (D-PAD) =================
-    function startManual(dir) {
-      currentDir = dir; sendManual(dir);
-      manualInterval = setInterval(() => sendManual(dir), 150);
-    }
-    function stopManualSend() {
-      if (manualInterval) { clearInterval(manualInterval); manualInterval = null; }
-      currentDir = null;
-    }
+    // ================= РУЧНОЕ УПРАВЛЕНИЕ =================
+    window.startManual = (dir) => { currentDir = dir; sendManual(dir); manualInterval = setInterval(() => sendManual(dir), 150); };
+    window.stopManualSend = () => { if (manualInterval) { clearInterval(manualInterval); manualInterval = null; } currentDir = null; };
     function sendManual(dir) {
       if (!mqtt?.isConnected()) return;
       let dx = 0, dy = 0;
-      switch(dir) {
-        case 'up': dy = -4; break;
-        case 'down': dy = 4; break;
-        case 'left': dx = -4; break;
-        case 'right': dx = 4; break;
-      }
+      switch(dir) { case 'up': dy = -4; break; case 'down': dy = 4; break; case 'left': dx = -4; break; case 'right': dx = 4; break; }
       const msg = new Paho.MQTT.Message(JSON.stringify({ cmd: 'manual', dx, dy }));
       msg.destinationName = document.getElementById('mqttTopic').value.trim() || 'servo/control';
       mqtt.send(msg);
     }
-
-    // Привязка событий к кнопкам D-Pad
     document.querySelectorAll('.dpad-btn').forEach(btn => {
       ['mousedown','touchstart'].forEach(evt => btn.addEventListener(evt, e => { e.preventDefault(); startManual(btn.dataset.dir); }));
       ['mouseup','mouseleave','touchend','touchcancel'].forEach(evt => btn.addEventListener(evt, e => { e.preventDefault(); stopManualSend(); }));
     });
 
-    ui.thresholdSlider.addEventListener('input', e => { CONF_THRESHOLD = parseInt(e.target.value)/100; ui.thresholdValue.textContent = e.target.value+'%'; });
+    ui.thresholdSlider.addEventListener('input', e => { CONF_THRESHOLD = parseInt(e.target.value)/100; ui.thresholdValue.textContent = e.target.value+'%'; log(`🎯 Порог: ${e.target.value}%`); });
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && tracking) { log('⚠️ Вкладка в фоне', 'warn'); updateStatus('⚠️ Не сворачивайте!'); }
@@ -209,10 +185,11 @@
     });
 
     // ================= ИНИЦИАЛИЗАЦИЯ =================
-    async function init() {
+    window.init = async () => {
       try {
         ui.btnStart.classList.add('hidden'); ui.btnStop.classList.remove('hidden'); ui.stats.classList.remove('hidden');
-        updateStatus('📷 Камера...'); vid = document.getElementById('vid'); canvas = document.getElementById('canvas'); ctx = canvas.getContext('2d');
+        updateStatus('📷 Камера...'); log('Запрос камеры...', 'info');
+        vid = document.getElementById('vid'); canvas = document.getElementById('canvas'); ctx = canvas.getContext('2d');
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: {ideal:320}, height: {ideal:240} }, audio: false });
         vid.srcObject = stream; await new Promise(r => vid.onloadedmetadata = () => { vid.play(); r(); });
         canvas.width = CANVAS_WIDTH; canvas.height = CANVAS_HEIGHT; log('✅ Камера OK', 'ok'); updateStatus('🔌 MQTT...');
@@ -224,18 +201,25 @@
         
         mqtt = new Paho.MQTT.Client(host, port, `/mqtt`, `web_pt_${Date.now()}`);
         connectOptions = { timeout:30, keepAliveInterval:30, cleanSession:true, useSSL:location.protocol==='https:', mqttVersion:4,
-          onSuccess: () => { log('✅ MQTT подключен', 'ok'); updateStatus('⏳ AI...'); mqtt.subscribe(topic); loadAI(); },
+          onSuccess: () => { log('✅ MQTT подключен', 'ok'); updateStatus('⏳ Загрузка YOLOv8n...'); mqtt.subscribe(topic); loadAI(); },
           onFailure: (r) => { log(`❌ MQTT: ${r.errorMessage}`, 'err'); setTimeout(()=>!mqtt.isConnected()&&mqtt.connect(connectOptions),3000); }
         };
         if (user) { connectOptions.userName=user; connectOptions.password=pass; }
         mqtt.onConnectionLost = r => { log(`🔴 MQTT: ${r.errorMessage}`, 'err'); updateStatus(`🔴 Lost`); if([0,1,3,6,7].includes(r.errorCode)) setTimeout(()=>!mqtt.isConnected()&&mqtt.connect(connectOptions),3000); };
         mqtt.connect(connectOptions); toggleConfig();
       } catch(e) { log(`❌ ${e.message}`, 'err'); updateStatus(`❌ ${e.message}`); ui.btnStart.classList.remove('hidden'); ui.btnStop.classList.add('hidden'); }
-    }
+    };
 
     async function loadAI() {
-      try { updateStatus('⏳ AI...'); detector = await cocoSsd.load({base:'lite_mobilenet_v2'}); log('✅ AI готов!', 'ok'); updateStatus('🟢 ТРЕКИНГ АКТИВЕН'); tracking=true; lastFpsTime=performance.now(); loop(); }
-      catch(e) { log(`❌ AI: ${e.message}`, 'err'); updateStatus('❌ AI Failed'); }
+      try {
+        updateStatus('⏳ Загрузка модели (~6MB)...');
+        // Пробуем WebGPU, если нет -> WASM
+        try { detector = await pipeline('object-detection', 'Xenova/yolov8n', { device: 'webgpu', progress_callback: (p) => { if(p.status==='download' && p.progress) updateStatus(`📥 ${Math.round(p.progress)}%`); }}); } 
+        catch { detector = await pipeline('object-detection', 'Xenova/yolov8n', { device: 'wasm', progress_callback: (p) => { if(p.status==='download' && p.progress) updateStatus(`📥 ${Math.round(p.progress)}%`); }}); }
+        
+        log('✅ YOLOv8n загружен!', 'ok'); updateStatus('🟢 ТРЕКИНГ АКТИВЕН');
+        tracking = true; lastFpsTime = performance.now(); loop();
+      } catch(e) { log(`❌ AI: ${e.message}`, 'err'); updateStatus('❌ AI Failed'); }
     }
 
     // ================= ОСНОВНОЙ ЦИКЛ =================
@@ -244,17 +228,30 @@
       requestAnimationFrame(loop); frameCount++;
       const now = performance.now(); if (now-lastFpsTime>=1000) { ui.fps.textContent=frameCount; frameCount=0; lastFpsTime=now; }
       ctx.drawImage(vid,0,0,CANVAS_WIDTH,CANVAS_HEIGHT);
+      
       try {
-        const preds = await detector.detect(canvas);
-        const valid = preds.filter(p => p.score >= CONF_THRESHOLD);
-        ui.objCount.textContent = valid.length; if(valid.length===0) { drawCrosshair('#f00'); return; }
-        const obj = valid[0]; const [x,y,w,h] = obj.bbox; let cx=x+w/2, cy=y+h/2; if(isMirrored) cx=CANVAS_WIDTH-cx;
-        const ex=cx-CANVAS_WIDTH/2, ey=cy-CANVAS_HEIGHT/2;
+        // YOLOv8n inference
+        const results = await detector(canvas, { threshold: CONF_THRESHOLD });
+        if (!results || results.length === 0) { drawCrosshair('#f00'); return; }
+        
+        const obj = results[0]; // Самый вероятный объект
+        const x = obj.box.xmin, y = obj.box.ymin;
+        const w = obj.box.xmax - x, h = obj.box.ymax - y;
+        
+        let cx = x + w/2, cy = y + h/2;
+        if(isMirrored) cx = CANVAS_WIDTH - cx;
+        
+        const ex = cx - CANVAS_WIDTH/2, ey = cy - CANVAS_HEIGHT/2;
+        ui.objCount.textContent = results.length;
+        
+        // Отрисовка
         ctx.strokeStyle='#0f0'; ctx.lineWidth=2; ctx.strokeRect(x,y,w,h);
         ctx.beginPath(); ctx.arc(cx,cy,6,0,Math.PI*2); ctx.fillStyle='#0f0'; ctx.fill(); drawCrosshair('#0f0');
-        ctx.fillStyle='#0f0'; ctx.font='bold 11px monospace'; ctx.fillText(`${obj.class} ${Math.round(obj.score*100)}%`, x, y-8);
+        ctx.fillStyle='#0f0'; ctx.font='bold 11px monospace'; 
+        ctx.fillText(`${obj.label} ${Math.round(obj.score*100)}%`, x, y-8);
+        
         if(now-lastSend>=SEND_INTERVAL && mqtt?.isConnected()) {
-          mqtt.send(new Paho.MQTT.Message(JSON.stringify({ex:Math.round(ex),ey:Math.round(ey),conf:parseFloat(obj.score.toFixed(3)),class:obj.class})).destinationName=document.getElementById('mqttTopic').value.trim()||'servo/control');
+          mqtt.send(new Paho.MQTT.Message(JSON.stringify({ex:Math.round(ex),ey:Math.round(ey),conf:parseFloat(obj.score.toFixed(3)),class:obj.label})).destinationName=document.getElementById('mqttTopic').value.trim()||'servo/control');
           sentCount++; ui.sentCount.textContent=sentCount; lastSend=now;
         }
       } catch(e) { console.error(e); }
@@ -262,13 +259,13 @@
 
     function drawCrosshair(c) { ctx.strokeStyle=c; ctx.lineWidth=1; ctx.setLineDash([5,5]); ctx.beginPath(); ctx.moveTo(CANVAS_WIDTH/2-15,CANVAS_HEIGHT/2); ctx.lineTo(CANVAS_WIDTH/2+15,CANVAS_HEIGHT/2); ctx.moveTo(CANVAS_WIDTH/2,CANVAS_HEIGHT/2-15); ctx.lineTo(CANVAS_WIDTH/2,CANVAS_HEIGHT/2+15); ctx.stroke(); ctx.setLineDash([]); }
     
-    function stop() {
-      tracking=false; controlMode='auto'; ui.modeBtn.textContent='🤖 Авто'; ui.modeBtn.className='auto';
+    window.stop = () => {
+      tracking=false; controlMode='auto'; ui.modeBtn.textContent='🤖'; ui.modeBtn.className='float-btn auto';
       ui.dpad.classList.add('hidden'); stopManualSend(); updateStatus('⏹ Остановлено');
       if(vid?.srcObject) vid.srcObject.getTracks().forEach(t=>t.stop()); if(mqtt?.isConnected()) mqtt.disconnect();
       ui.btnStart.classList.remove('hidden'); ui.btnStop.classList.add('hidden'); ui.stats.classList.add('hidden');
       ctx.fillStyle='#000'; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.fillStyle='#666'; ctx.font='16px monospace'; ctx.textAlign='center'; ctx.fillText('Остановлено',canvas.width/2,canvas.height/2); ctx.textAlign='left'; toggleConfig();
-    }
+    };
 
     window.onerror = (m,u,l) => { log(`💥 ${m} (L${l})`, 'err'); return false; };
   </script>
