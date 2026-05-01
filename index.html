@@ -3,340 +3,155 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎯 Face Turret v2.3</title>
+    <title>Камера</title>
     <style>
-        :root { --bg:#0a0a0f; --panel:#151520; --accent:#00d4ff; --text:#e0e0e0; --ok:#00ff88; --warn:#ffaa00; --err:#ff4444; }
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body { background:var(--bg); color:var(--text); font-family:system-ui,sans-serif; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
-        
-        .header { display:flex; justify-content:space-between; align-items:center; padding:10px 15px; background:var(--panel); border-bottom:1px solid #2a2a3a; }
-        .header h1 { font-size:16px; color:var(--accent); }
-        .status { display:flex; align-items:center; gap:6px; font-size:12px; }
-        .dot { width:8px; height:8px; border-radius:50%; background:var(--err); }
-        .dot.on { background:var(--ok); box-shadow:0 0 6px var(--ok); }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-        .view { position:relative; flex:1; overflow:hidden; background:#000; }
-        video, canvas { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
-        
-        .hud { position:absolute; top:8px; left:8px; right:8px; display:flex; justify-content:space-between; z-index:10; }
-        .badge { background:rgba(0,0,0,0.75); padding:4px 10px; border-radius:12px; font-size:11px; }
-        .btn-row { display:flex; gap:6px; }
-        .btn-icon { background:rgba(0,0,0,0.6); border:1px solid #444; color:#aaa; width:32px; height:32px; border-radius:8px; cursor:pointer; }
+        body {
+            background: #1a1a2e;
+            color: #eee;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
 
-        .loading { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#888; font-size:13px; text-align:center; }
-        .spinner { width:24px; height:24px; border:3px solid rgba(0,212,255,0.2); border-top-color:var(--accent); border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 10px; }
-        @keyframes spin { to { transform:rotate(360deg); } }
-        .loading-error { color:var(--err); margin-top:10px; font-size:12px; }
-        .loading-error button { background:var(--accent); color:#000; border:none; padding:4px 12px; border-radius:4px; margin:5px; cursor:pointer; }
+        h1 {
+            margin-bottom: 20px;
+            font-size: 1.8rem;
+            color: #e94560;
+        }
 
-        .controls { padding:12px; background:var(--panel); border-top:1px solid #2a2a3a; }
-        .mode-switch { display:flex; gap:8px; margin-bottom:12px; }
-        .mode-btn { flex:1; padding:10px; border:1px solid #333; background:transparent; color:#888; border-radius:10px; font-weight:600; }
-        .mode-btn.active { background:var(--accent); color:#000; }
+        .video-container {
+            width: 100%;
+            max-width: 800px;
+            background: #16213e;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+        }
 
-        .info { display:flex; justify-content:space-around; margin-top:8px; font-size:11px; color:#777; }
-        .info span { color:var(--accent); font-family:monospace; }
+        video {
+            width: 100%;
+            display: block;
+            border-radius: 12px;
+            background: #000;
+        }
 
-        #debugPanel { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.95); z-index:200; padding:15px; overflow-y:auto; font-family:monospace; font-size:11px; color:#0f0; }
-        #debugPanel.show { display:block; }
-        .log-line { margin:2px 0; padding:3px 0; border-bottom:1px solid #222; }
-        .log-line.err { color:var(--err); }
-        .log-line.warn { color:var(--warn); }
-        .log-line.ok { color:var(--ok); }
-        .close-db { position:fixed; top:10px; right:15px; background:#333; color:#fff; border:none; padding:6px 12px; border-radius:6px; cursor:pointer; }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 20px;
+            justify-content: center;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.3s, transform 0.1s;
+            color: #fff;
+        }
+
+        button:active {
+            transform: scale(0.96);
+        }
+
+        .btn-start { background: #0f3460; }
+        .btn-start:hover { background: #1a5276; }
+
+        .btn-stop { background: #e94560; }
+        .btn-stop:hover { background: #c0392b; }
+
+        .btn-switch { background: #e67e22; }
+        .btn-switch:hover { background: #f39c12; }
+
+        .status {
+            margin-top: 15px;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+
+        .status.active { background: #1a8a5c; }
+        .status.inactive { background: #e94560; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>🎯 FACE TURRET v2.3</h1>
-        <div class="status">
-            <div class="dot" id="statusDot"></div>
-            <span id="statusText">Старт...</span>
-        </div>
+
+    <h1>📷 Камера</h1>
+
+    <div class="video-container">
+        <video id="video" autoplay playsinline></video>
     </div>
 
-    <div class="view">
-        <video id="video" playsinline autoplay muted></video>
-        <canvas id="canvas"></canvas>
-        <div class="hud">
-            <div class="badge" id="faceBadge">⏳ AI...</div>
-            <div class="btn-row">
-                <button class="btn-icon" onclick="switchCamera()">🔄</button>
-                <button class="btn-icon" onclick="toggleDebug()">🐞</button>
-            </div>
-        </div>
-        <div class="loading" id="loadingMsg">
-            <div class="spinner"></div>
-            <div id="loadingText">Загрузка...</div>
-            <div class="loading-error" id="loadingError" style="display:none;">
-                <div id="errorMsg"></div>
-                <button onclick="retryLoad()">🔄 Повтор</button>
-                <button onclick="enableTestMode()">🧪 Тест</button>
-            </div>
-        </div>
-    </div>
+    <div id="status" class="status inactive">Камера не активна</div>
 
     <div class="controls">
-        <div class="mode-switch">
-            <button class="mode-btn active" id="btnAuto" onclick="setMode('auto')">🤖 АВТО</button>
-            <button class="mode-btn" id="btnManual" onclick="setMode('manual')">🎮 РУЧНОЙ</button>
-        </div>
-        <div class="info">
-            <div>X: <span id="valX">0.00</span></div>
-            <div>Y: <span id="valY">0.00</span></div>
-            <div>Режим: <span id="modeLabel">AUTO</span></div>
-        </div>
+        <button class="btn-start" onclick="startCamera()">▶ Старт</button>
+        <button class="btn-stop" onclick="stopCamera()">⏹ Стоп</button>
+        <button class="btn-switch" onclick="switchCamera()">🔃 Переключить камеру</button>
     </div>
 
-    <div id="debugPanel">
-        <button class="close-db" onclick="toggleDebug()">✕ Закрыть</button>
-        <h3 style="color:var(--accent); margin-bottom:10px;">🐞 Лог</h3>
-        <div id="debugLog"></div>
-    </div>
-
-    <!-- ✅ ЗАГРУЗКА MEDIAPIPE ЧЕРЕЗ SCRIPT TAG -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.js"></script>
-    
     <script>
-        // === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ===
-        let config = JSON.parse(localStorage.getItem('turretCfg') || '{}');
-        config.prefix = config.prefix || 'turret_myid';
-        config.broker = config.broker || 'broker.hivemq.com';
-        config.port = config.port || 443;
-        config.ssl = config.ssl !== false;
-        
-        let mqtt = null;
-        let currentMode = 'auto';
-        let faceData = null;
-        let lastPub = {face:0};
-        const PUB_RATE = 80;
-        let detectionRunning = false;
-        let faceDetection = null;
-        let testMode = false;
+        let stream = null;
+        let facingMode = 'user'; // 'user' = фронтальная, 'environment' = задняя
 
         const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        const faceBadge = document.getElementById('faceBadge');
-        const loadingMsg = document.getElementById('loadingMsg');
+        const status = document.getElementById('status');
 
-        // === ЛОГИРОВАНИЕ ===
-        const logEl = document.getElementById('debugLog');
-        function log(msg, type='info') {
-            const d = document.createElement('div'); 
-            d.className = `log-line ${type==='err'?'err':type==='warn'?'warn':type==='ok'?'ok':''}`;
-            d.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-            logEl.prepend(d);
-            if(logEl.children.length > 100) logEl.lastChild.remove();
-            console.log(`[${type.toUpperCase()}] ${msg}`);
-        }
-
-        function updateLoading(text) {
-            document.getElementById('loadingText').textContent = text;
-        }
-
-        function showLoadingError(msg) {
-            document.getElementById('loadingError').style.display = 'block';
-            document.getElementById('errorMsg').textContent = msg;
-            document.getElementById('loadingText').textContent = '❌ Ошибка';
-        }
-
-        window.toggleDebug = () => {
-            document.getElementById('debugPanel').classList.toggle('show');
-        };
-
-        window.retryLoad = async () => {
-            document.getElementById('loadingError').style.display = 'none';
-            loadingMsg.style.display = 'block';
-            updateLoading('Повторная загрузка...');
-            await loadMediaPipe();
-        };
-
-        window.enableTestMode = () => {
-            testMode = true;
-            loadingMsg.style.display = 'none';
-            faceBadge.textContent = '🧪 ТЕСТ';
-            faceBadge.style.color = '#ffaa00';
-            log('🧪 Тестовый режим активирован', 'warn');
-            setInterval(() => {
-                if(!testMode) return;
-                const t = Date.now() / 1000;
-                const tx = Math.sin(t) * 0.3;
-                const ty = Math.cos(t * 0.8) * 0.2;
-                faceData = { x: tx, y: ty, conf: 0.95 };
-                document.getElementById('valX').textContent = tx.toFixed(2);
-                document.getElementById('valY').textContent = ty.toFixed(2);
-                
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                const cx = (tx + 0.5) * canvas.width;
-                const cy = (ty + 0.5) * canvas.height;
-                ctx.strokeStyle = '#ffaa00';
-                ctx.lineWidth = 3;
-                ctx.setLineDash([8, 4]);
-                ctx.strokeRect(cx - 50, cy - 50, 100, 100);
-                ctx.setLineDash([]);
-                ctx.fillStyle = '#ffaa00';
-                ctx.beginPath();
-                ctx.arc(cx, cy, 8, 0, Math.PI * 2);
-                ctx.fill();
-            }, 100);
-        };
-
-        log('🚀 Face Turret v2.3 стартует...', 'ok');
-
-        // === КАМЕРА ===
         async function startCamera() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
-                });
-                video.srcObject = stream;
-                await new Promise(resolve => {
-                    video.onloadedmetadata = () => {
-                        video.play();
-                        canvas.width = video.videoWidth;
-                        canvas.height = video.videoHeight;
-                        log(`📷 Камера: ${canvas.width}x${canvas.height}`, 'ok');
-                        resolve();
-                    };
-                });
-            } catch(e) {
-                log(`❌ Камера: ${e.message}`, 'err');
-                faceBadge.textContent = '❌ Нет камеры';
-            }
-        }
+                stopCamera(); // Останавливаем предыдущий поток, если есть
 
-        window.switchCamera = async () => {
-            const current = video.srcObject;
-            if(current) current.getTracks().forEach(t => t.stop());
-            const facing = localStorage.getItem('camFacing') === 'user' ? 'environment' : 'user';
-            localStorage.setItem('camFacing', facing);
-            await startCamera();
-        };
-
-        // === MEDIAPIPE — ИСПРАВЛЕННАЯ ВЕРСИЯ ===
-        async function loadMediaPipe() {
-            updateLoading('Проверка MediaPipe...');
-            log('🧠 Инициализация MediaPipe...');
-
-            try {
-                if (location.protocol === 'file:') {
-                    throw new Error('⛔ Откройте через http://localhost');
-                }
-
-                // ✅ ПРОВЕРКА: загрузился ли vision_bundle.js
-                if(typeof VisionTasks === 'undefined') {
-                    throw new Error('vision_bundle.js не загрузился. Проверьте интернет.');
-                }
-
-                log('✅ MediaPipe библиотека найдена', 'ok');
-                updateLoading('Создание детектора...');
-                
-                const { FaceDetector, FilesetResolver } = VisionTasks;
-                
-                const filesetResolver = await FilesetResolver.forVisionTasks(
-                    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
-                );
-                
-                updateLoading('Загрузка модели...');
-                
-                faceDetection = await FaceDetector.createFromOptions(filesetResolver, {
-                    baseOptions: {
-                        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',
-                        delegate: 'CPU'
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: facingMode,
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
                     },
-                    runningMode: 'VIDEO',
-                    minDetectionConfidence: 0.5
+                    audio: false
                 });
 
-                log('✅ AI готов!', 'ok');
-                loadingMsg.style.display = 'none';
-                faceBadge.textContent = '🔍 Поиск...';
-                
-                if(video.readyState >= 2) startDetectionLoop();
-                
-            } catch(e) {
-                console.error('AI Error:', e);
-                log(`❌ AI ошибка: ${e.message}`, 'err');
-                showLoadingError(e.message || 'Ошибка загрузки');
+                video.srcObject = stream;
+                status.textContent = '✅ Камера активна';
+                status.className = 'status active';
+
+            } catch (err) {
+                console.error('Ошибка доступа к камере:', err);
+                status.textContent = '❌ Ошибка: ' + err.message;
+                status.className = 'status inactive';
             }
         }
 
-        function startDetectionLoop() {
-            if(detectionRunning) return;
-            detectionRunning = true;
-            
-            async function processFrame() {
-                if(video.readyState >= 2 && faceDetection && document.visibilityState === 'visible') {
-                    try {
-                        const results = await faceDetection.detectForVideo(video, performance.now());
-                        processDetections(results);
-                    } catch(e) {
-                        // игнорируем ошибки кадра
-                    }
-                }
-                requestAnimationFrame(processFrame);
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
             }
-            processFrame();
-            log('🔄 Детекция запущена', 'ok');
+            video.srcObject = null;
+            status.textContent = 'Камера не активна';
+            status.className = 'status inactive';
         }
 
-        function processDetections(results) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            if(results.detections?.length > 0) {
-                const det = results.detections[0];
-                const bbox = det.boundingBox;
-                const conf = det.categories?.[0]?.score || 0;
-                
-                const cx = bbox.originX + bbox.width / 2;
-                const cy = bbox.originY + bbox.height / 2;
-                
-                faceData = { 
-                    x: (cx / canvas.width) - 0.5,
-                    y: (cy / canvas.height) - 0.5,
-                    conf: conf
-                };
-                
-                ctx.strokeStyle = '#00ff88';
-                ctx.lineWidth = 3;
-                ctx.strokeRect(bbox.originX, bbox.originY, bbox.width, bbox.height);
-                ctx.fillStyle = '#00ff88';
-                ctx.beginPath();
-                ctx.arc(cx, cy, 8, 0, Math.PI * 2);
-                ctx.fill();
-                
-                faceBadge.textContent = `✅ ${Math.round(conf*100)}%`;
-                document.getElementById('valX').textContent = faceData.x.toFixed(2);
-                document.getElementById('valY').textContent = faceData.y.toFixed(2);
-                
+        async function switchCamera() {
+            facingMode = facingMode === 'user' ? 'environment' : 'user';
+            if (stream) {
+                await startCamera();
             } else {
-                faceData = null;
-                faceBadge.textContent = '🔍 Поиск...';
+                status.textContent = '🔄 Режим камеры изменён на: ' + (facingMode === 'user' ? 'фронтальную' : 'заднюю');
             }
-        }
-
-        // === УПРАВЛЕНИЕ ===
-        window.setMode = m => {
-            currentMode = m;
-            document.getElementById('btnAuto').classList.toggle('active', m==='auto');
-            document.getElementById('btnManual').classList.toggle('active', m==='manual');
-            document.getElementById('modeLabel').textContent = m.toUpperCase();
-            log(`🎮 Режим: ${m}`, 'ok');
-        };
-
-        // === СТАРТ ===
-        async function startSystem() {
-            await startCamera();
-            setTimeout(loadMediaPipe, 500);
-            log('✅ Система готова', 'ok');
-        }
-
-        if(document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', startSystem);
-        } else {
-            startSystem();
         }
     </script>
+
 </body>
 </html>
