@@ -2,202 +2,103 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Browser Detection & Tracking</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Pan-Tilt AI Tracker</title>
   <style>
-    body { background: #0a0a0a; color: #0f0; font-family: 'Courier New', monospace; margin: 0; padding: 16px; }
-    #status { margin: 8px 0; font-size: 14px; }
-    #canvas { border: 2px solid #333; background: #000; max-width: 100%; display: block; }
-    .controls { margin: 8px 0; }
-    button { background: #222; color: #0f0; border: 1px solid #444; padding: 6px 12px; cursor: pointer; }
-    button:hover { background: #333; }
-    .info { font-size: 12px; color: #888; margin-top: 4px; }
+    body { margin: 0; background: #000; overflow: hidden; font-family: system-ui; }
+    #canvas { width: 100vw; height: 100vh; display: block; transform: scaleX(-1); }
+    #ui { position: fixed; top: 10px; left: 10px; right: 10px; background: rgba(0,0,0,0.8); 
+          color: #0f0; padding: 10px; border-radius: 10px; z-index: 10; }
+    input, button { background: #222; color: #fff; border: 1px solid #555; padding: 6px 8px; margin: 2px; border-radius: 4px; }
+    button { cursor: pointer; background: #004400; }
+    .row { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+    #status { margin-top: 5px; font-size: 13px; }
   </style>
 </head>
 <body>
-  <h2>🤖 Auto Detection & Tracking (Browser)</h2>
-  <div id="status">⏳ Загрузка модели YOLOv8n...</div>
-  <div class="info">FPS: <span id="fps">0</span> | Tracks: <span id="trackCount">0</span></div>
-  <canvas id="canvas" width="320" height="240"></canvas>
+  <video id="vid" style="display:none" autoplay playsinline></video>
+  <canvas id="canvas"></canvas>
   
-  <div class="controls">
-    <button id="btnCam">📷 Использовать камеру ПК</button>
-    <button id="btnM5" disabled>📡 Подключить M5Stack (WebSocket)</button>
+  <div id="ui">
+    <div class="row">
+      <input id="host" placeholder="MQTT Host" value="your-cluster.s1.eu.hivemq.cloud">
+      <input id="user" placeholder="User" value="your_user">
+      <input id="pass" type="password" placeholder="Pass" value="your_pass">
+      <button onclick="init()">▶ СТАРТ</button>
+    </div>
+    <div id="status">⏳ Ожидание...</div>
   </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
   <script type="module">
-    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2';
-    
-    env.allowLocalModels = false;
-    env.backends.onnx.wasm.numThreads = 1; // стабильнее на слабых устройствах
+    import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2';
 
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const statusEl = document.getElementById('status');
-    const fpsEl = document.getElementById('fps');
-    const trackCountEl = document.getElementById('trackCount');
+    let mqtt, detector, vid, ctx, canvas;
+    let tracking = false, lastSend = 0;
 
-    // === Трекер (Centroid + Exponential Smoothing) ===
-    class SimpleTracker {
-      constructor(maxDist = 40, maxMisses = 5) {
-        this.tracks = [];
-        this.nextId = 1;
-        this.maxDist = maxDist;
-        this.maxMisses = maxMisses;
-      }
-      update(detections) {
-        const matched = new Array(detections.length).fill(false);
-        const alpha = 0.3; // сглаживание
-
-        for (const t of this.tracks) {
-          let bestIdx = -1, bestDist = this.maxDist;
-          for (let i = 0; i < detections.length; i++) {
-            if (matched[i]) continue;
-            const d = Math.hypot(detections[i].cx - t.x, detections[i].cy - t.y);
-            if (d < bestDist) { bestDist = d; bestIdx = i; }
-          }
-          if (bestIdx !== -1) {
-            matched[bestIdx] = true;
-            const d = detections[bestIdx];
-            t.x = t.x * (1-alpha) + d.cx * alpha;
-            t.y = t.y * (1-alpha) + d.cy * alpha;
-            t.w = t.w * (1-alpha) + d.w * alpha;
-            t.h = t.h * (1-alpha) + d.h * alpha;
-            t.class = d.class;
-            t.conf = d.conf;
-            t.misses = 0;
-          } else {
-            t.misses++;
-            t.vx = t.vx || 0; t.vy = t.vy || 0;
-            t.x += t.vx * 2; t.y += t.vy * 2; // предсказание
-          }
-        }
-
-        this.tracks = this.tracks.filter(t => t.misses <= this.maxMisses);
-
-        for (let i = 0; i < detections.length; i++) {
-          if (!matched[i]) {
-            const d = detections[i];
-            this.tracks.push({
-              id: this.nextId++,
-              x: d.cx, y: d.cy, w: d.w, h: d.h,
-              vx: 0, vy: 0, misses: 0,
-              class: d.class, conf: d.conf
-            });
-          }
-        }
-        return this.tracks;
-      }
-    }
-
-    // === Глобальные переменные ===
-    let detector = null;
-    let tracker = new SimpleTracker(50, 5);
-    let videoStream = null;
-    let ws = null;
-    let processing = false;
-    let lastFrameTime = 0;
-    let frameSkip = 0; // обрабатывать 1 из N кадров
-    const SKIP_RATE = 3;
-
-    // === Инициализация модели ===
-    async function initModel() {
-      try {
-        // Пробуем WebGPU, если нет → WASM
-        detector = await pipeline('object-detection', 'Xenova/yolov8n', { 
-          device: 'webgpu', 
-          progress_callback: (p) => statusEl.innerText = `⏳ Загрузка: ${Math.round(p*100)}%`
-        });
-      } catch(e) {
-        console.warn('WebGPU не доступен, fallback на WASM');
-        detector = await pipeline('object-detection', 'Xenova/yolov8n', { device: 'wasm' });
-      }
-      statusEl.innerText = '✅ Модель загружена. Нажмите "Использовать камеру ПК"';
-      document.getElementById('btnCam').disabled = false;
-    }
-
-    // === Обработка кадра ===
-    async function processFrame(imageSource) {
-      if (!detector || processing) return;
-      processing = true;
-
-      frameSkip = (frameSkip + 1) % SKIP_RATE;
-      if (frameSkip !== 0) {
-        processing = false;
-        requestAnimationFrame(() => processFrame(imageSource));
-        return;
-      }
-
-      const start = performance.now();
-      try {
-        const results = await detector(imageSource, { threshold: 0.25 });
-        const detections = results.map(r => ({
-          cx: r.box.x + r.box.width/2,
-          cy: r.box.y + r.box.height/2,
-          w: r.box.width, h: r.box.height,
-          class: r.label, conf: r.score
-        }));
-
-        const tracks = tracker.update(detections);
-        draw(tracks);
-        
-        const fps = Math.round(1000 / (performance.now() - lastFrameTime));
-        fpsEl.innerText = fps || 0;
-        trackCountEl.innerText = tracks.length;
-      } catch(err) {
-        console.error('Inference error:', err);
-      } finally {
-        processing = false;
-        lastFrameTime = performance.now();
-        requestAnimationFrame(() => processFrame(imageSource));
-      }
-    }
-
-    // === Отрисовка ===
-    function draw(tracks) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const colors = ['#0f0','#0ff','#f0f','#ff0','#f00','#a0f'];
+    window.init = async () => {
+      vid = document.getElementById('vid');
+      canvas = document.getElementById('canvas');
+      ctx = canvas.getContext('2d');
       
-      for (const t of tracks) {
-        const color = colors[t.id % colors.length];
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
-        ctx.strokeRect(t.x - t.w/2, t.y - t.h/2, t.w, t.h);
-        
-        ctx.fillStyle = color;
-        ctx.font = 'bold 12px monospace';
-        ctx.fillText(`#${t.id} ${t.class}`, t.x - t.w/2, t.y - t.h/2 - 4);
-        ctx.fillText(`conf: ${t.conf.toFixed(2)}`, t.x - t.w/2, t.y - t.h/2 - 18);
-      }
-    }
-
-    // === Камера ПК ===
-    document.getElementById('btnCam').addEventListener('click', async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { width: 320, height: 240, facingMode: 'environment' } 
+          video: { facingMode: 'environment', width: 320, height: 240 } 
         });
-        const video = document.createElement('video');
-        video.srcObject = stream;
-        video.play();
-        await new Promise(r => video.onloadedmetadata = r);
-        
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        
-        const loop = () => {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          processFrame(canvas);
-        };
-        loop();
-        statusEl.innerText = '📷 Камера активна';
-      } catch(e) {
-        statusEl.innerText = '❌ Ошибка камеры: ' + e.message;
-      }
-    });
+        vid.srcObject = stream; await vid.play();
+        canvas.width = 320; canvas.height = 240;
+      } catch(e) { return alert('Камера недоступна: ' + e.message); }
 
-    // === Запуск ===
-    initModel();
+      mqtt = new Paho.MQTT.Client(document.getElementById('host').value, 8884, "/mqtt", "web_pt_" + Date.now());
+      mqtt.onConnectionLost = () => document.getElementById('status').innerText = "🔴 MQTT Lost";
+      
+      mqtt.connect({
+        userName: document.getElementById('user').value,
+        password: document.getElementById('pass').value,
+        useSSL: true,
+        onSuccess: () => {
+          document.getElementById('status').innerText = "🟢 MQTT Ready. Loading AI...";
+          loadAI();
+        }
+      });
+    };
+
+    async function loadAI() {
+      detector = await pipeline('object-detection', 'Xenova/yolov8n', { device: 'webgpu' });
+      document.getElementById('status').innerText = "🟢 AI Loaded. Tracking started.";
+      tracking = true; loop();
+    }
+
+    async function loop() {
+      if (!tracking) return;
+      requestAnimationFrame(loop);
+      ctx.drawImage(vid, 0, 0, 320, 240);
+      
+      const res = await detector(canvas, { threshold: 0.35, limit: 1 });
+      if (res.length === 0) return;
+
+      const o = res[0];
+      const cx = o.box.x + o.box.width/2;
+      const cy = o.box.y + o.box.height/2;
+      const ex = cx - 160;
+      const ey = cy - 120;
+
+      // Визуализация
+      ctx.strokeStyle = '#0f0'; ctx.lineWidth = 2;
+      ctx.strokeRect(o.box.x, o.box.y, o.box.width, o.box.height);
+      ctx.beginPath(); ctx.arc(160, 120, 4, 0, Math.PI*2); ctx.stroke();
+      ctx.fillStyle = '#0f0'; ctx.font = '12px monospace';
+      ctx.fillText(`#${Math.round(o.score*100)}%`, o.box.x, o.box.y-5);
+
+      // Отправка 10 раз в секунду
+      const now = Date.now();
+      if (now - lastSend > 100 && mqtt.isConnected()) {
+        const msg = new Paho.MQTT.Message(JSON.stringify({ ex: ex, ey: ey, conf: o.score }));
+        msg.destinationName = "servo/control";
+        mqtt.send(msg);
+        lastSend = now;
+      }
+    }
   </script>
 </body>
 </html>
