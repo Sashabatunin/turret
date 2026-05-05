@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Pan-Tilt AI Tracker v2</title>
+  <title>Pan-Tilt AI Tracker v3</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; touch-action: none; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
@@ -77,6 +77,16 @@
   <script type="module">
     import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2';
 
+    // ================= НАСТРОЙКИ ОКРУЖЕНИЯ =================
+    // 🔽 ИСПРАВЛЕНИЕ: Используем надежный CDN вместо прямых запросов к Hugging Face
+    env.allowLocalModels = false;
+    env.backends.onnx.wasm.numThreads = 1;
+    env.backends.onnx.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2/dist/';
+    
+    // Модели: основная и запасная
+    const MODEL_PRIMARY = 'onnx-community/yolov8n'; // Обновленный путь
+    const MODEL_FALLBACK = 'Xenova/mobilenetv2-1.0-224'; // Легкая классификация на крайний случай
+
     // ================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =================
     let detector, mqtt, vid, ctx, canvas, videoContainer;
     let tracking = false;
@@ -84,20 +94,15 @@
     let isMirrored = false;
     let connectOptions = {};
     let CONF_THRESHOLD = 0.35;
-    
-    // 🔽 Для логирования объектов
     let lastLoggedObject = null;
     let lastLogTime = 0;
-    const LOG_COOLDOWN = 2000; // Не логировать тот же объект чаще чем раз в 2 сек
+    const LOG_COOLDOWN = 2000;
     
     const SEND_INTERVAL = 100;
     const CANVAS_WIDTH = 320;
     const CANVAS_HEIGHT = 240;
 
-    env.backends.onnx.wasm.numThreads = 1;
-    env.allowLocalModels = false;
-
-    // Глобальные функции для onclick
+    // Глобальные функции
     window.log = (msg, type = 'info', className = '') => {
       const time = new Date().toLocaleTimeString();
       const cls = type === 'err' ? 'log-err' : type === 'warn' ? 'log-warn' : type === 'detect' ? 'log-detect' : 'log-ok';
@@ -130,12 +135,12 @@
     document.getElementById('thresholdSlider').addEventListener('input', e => { 
       CONF_THRESHOLD = parseInt(e.target.value)/100; 
       document.getElementById('thresholdValue').textContent = e.target.value+'%'; 
-      window.log(`🎯 Порог изменён: ${e.target.value}%`, 'info'); 
+      window.log(`🎯 Порог: ${e.target.value}%`, 'info'); 
     });
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && tracking) { 
-        window.log('⚠️ Вкладка ушла в фон — возможны обрывы MQTT', 'warn'); window.updateStatus('⚠️ Не сворачивайте!'); 
+        window.log('⚠️ Вкладка в фоне', 'warn'); window.updateStatus('⚠️ Не сворачивайте!'); 
       } else if (!document.hidden && tracking && mqtt && !mqtt.isConnected()) { 
         window.log('🔄 Восстанавливаю MQTT...', 'info'); mqtt.connect(connectOptions); 
       }
@@ -183,12 +188,12 @@
           useSSL: location.protocol === 'https:', mqttVersion: 4,
           onSuccess: () => { 
             window.log('✅ MQTT подключен', 'ok'); 
-            window.updateStatus('⏳ Загрузка YOLOv8n (~6MB)...'); 
+            window.updateStatus('⏳ Загрузка AI модели...'); 
             mqtt.subscribe(topic); 
             loadAI(); 
           },
           onFailure: (res) => { 
-            window.log(`❌ MQTT: ${res.errorMessage} (code: ${res.errorCode})`, 'err'); 
+            window.log(`❌ MQTT: ${res.errorMessage}`, 'err'); 
             window.updateStatus('❌ MQTT Failed'); 
             setTimeout(() => { if (!mqtt.isConnected()) mqtt.connect(connectOptions); }, 3000); 
           }
@@ -196,8 +201,8 @@
         if (user) { connectOptions.userName = user; connectOptions.password = pass; }
 
         mqtt.onConnectionLost = (res) => {
-          window.log(`🔴 MQTT отключен: ${res.errorMessage} (code: ${res.errorCode})`, 'err');
-          window.updateStatus(`🔴 Lost: ${res.errorMessage}`);
+          window.log(`🔴 MQTT отключен: ${res.errorMessage}`, 'err');
+          window.updateStatus(`🔴 Lost`);
           if ([0, 1, 3, 6, 7].includes(res.errorCode)) setTimeout(() => { if (!mqtt.isConnected()) mqtt.connect(connectOptions); }, 3000);
         };
         
@@ -209,43 +214,74 @@
       }
     };
 
-    async function loadAI() {
-      try {
-        let device = 'wasm';
+    // ================= 🔽 ЗАГРУЗКА МОДЕЛИ С ПОВТОРОМ =================
+    async function loadModelWithRetry(modelId, retries = 3) {
+      for (let i = 0; i < retries; i++) {
         try {
-          if (navigator.gpu) {
-            await navigator.gpu.requestAdapter();
-            device = 'webgpu';
-            window.log('🚀 WebGPU доступен — ускорение включено', 'ok');
-          }
-        } catch(e) { window.log('⚠️ WebGPU недоступен, используется WASM', 'warn'); }
-
-        detector = await pipeline('object-detection', 'Xenova/yolov8n', { 
-          device: device,
-          progress_callback: (progress) => {
-            if (progress.status === 'download' && progress.file) {
-              const pct = progress.progress ? Math.round(progress.progress * 100) : '?';
-              window.updateStatus(`📥 ${progress.file}: ${pct}%`);
+          window.log(`📥 Попытка ${i+1}: Загрузка ${modelId}...`, 'info');
+          
+          // Проверяем поддержку WebGPU
+          let device = 'wasm';
+          try {
+            if (navigator.gpu) {
+              await navigator.gpu.requestAdapter();
+              device = 'webgpu';
+              window.log('🚀 WebGPU доступен', 'ok');
             }
-          }
-        });
-        
-        window.log('✅ YOLOv8n загружен! Начинаю трекинг...', 'ok'); 
-        window.updateStatus('🟢 ТРЕКИНГ АКТИВЕН');
-        tracking = true; lastFpsTime = performance.now(); loop();
-      } catch (e) { 
-        window.log(`❌ Ошибка AI: ${e.message}`, 'err'); window.updateStatus('❌ AI Failed'); 
+          } catch(e) {}
+
+          return await pipeline('object-detection', modelId, { 
+            device: device,
+            progress_callback: (p) => {
+              if (p.status === 'download' && p.file) {
+                const pct = p.progress ? Math.round(p.progress * 100) : '?';
+                window.updateStatus(`📥 ${p.file}: ${pct}%`);
+              }
+            }
+          });
+        } catch (err) {
+          window.log(`⚠️ Попытка ${i+1} не удалась: ${err.message}`, 'warn');
+          if (i === retries - 1) throw err;
+          await new Promise(r => setTimeout(r, 1000 * (i + 1))); // Экспоненциальная задержка
+        }
       }
     }
 
-    // ================= 🔽 ФУНКЦИЯ ЛОГИРОВАНИЯ ОБЪЕКТОВ =================
+    async function loadAI() {
+      try {
+        // 1. Пробуем основную модель
+        detector = await loadModelWithRetry(MODEL_PRIMARY);
+        window.log('✅ Модель загружена! Трекинг активен.', 'ok');
+        window.updateStatus('🟢 ТРЕКИНГ АКТИВЕН');
+        
+      } catch (primaryErr) {
+        window.log(`❌ Основная модель не загрузилась: ${primaryErr.message}`, 'err');
+        window.log('🔄 Пробую запасной вариант (упрощенный)...', 'warn');
+        window.updateStatus('⚠️ Используем упрощенный режим');
+        
+        try {
+          // 2. Запасной вариант: простая классификация (не детекция!)
+          // Это не будет рисовать боксы, но покажет, что соединение работает
+          detector = await pipeline('image-classification', MODEL_FALLBACK);
+          window.log('✅ Запасная модель загружена (только классификация)', 'ok');
+          // Переключаем режим работы (опционально можно добавить флаг)
+        } catch (fallbackErr) {
+          window.log(`❌ Критическая ошибка: ${fallbackErr.message}`, 'err');
+          window.updateStatus('❌ AI недоступен');
+          return;
+        }
+      }
+      
+      tracking = true; 
+      lastFpsTime = performance.now(); 
+      loop();
+    }
+
+    // ================= ЛОГИРОВАНИЕ ОБЪЕКТОВ =================
     function logDetectedObject(label, score, ex, ey) {
       const now = Date.now();
       const objKey = `${label}_${Math.round(score*100)}`;
       
-      // Логируем если:
-      // 1. Это новый объект (не тот же, что в прошлый раз)
-      // 2. Или прошло больше LOG_COOLDOWN с последнего лога
       if (objKey !== lastLoggedObject || (now - lastLogTime) >= LOG_COOLDOWN) {
         const direction = [];
         if (Math.abs(ex) > 15) direction.push(ex > 0 ? '→' : '←');
@@ -270,50 +306,66 @@
       ctx.drawImage(vid, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
       
       try {
-        const results = await detector(canvas, { threshold: CONF_THRESHOLD });
-        
-        if (!results || results.length === 0) { 
-          drawCrosshair('#f00'); 
-          // Логируем потерю объекта (не чаще раза в 3 сек)
-          if (lastLoggedObject && (now - lastLogTime) >= 3000) {
-            window.log('🔻 Объект потерян', 'warn');
-            lastLoggedObject = null;
+        // Проверяем тип модели (детекция или классификация)
+        if (detector.task === 'object-detection') {
+          // 🔽 ДЕТЕКЦИЯ (YOLO)
+          const results = await detector(canvas, { threshold: CONF_THRESHOLD });
+          
+          if (!results || results.length === 0) { 
+            drawCrosshair('#f00'); 
+            if (lastLoggedObject && (now - lastLogTime) >= 3000) {
+              window.log('🔻 Объект потерян', 'warn');
+              lastLoggedObject = null;
+            }
+            return; 
           }
-          return; 
+          
+          const obj = results[0];
+          const x = obj.box.xmin, y = obj.box.ymin;
+          const w = obj.box.xmax - x, h = obj.box.ymax - y;
+          
+          let cx = x + w/2, cy = y + h/2;
+          if (isMirrored) cx = CANVAS_WIDTH - cx;
+          
+          const ex = cx - CANVAS_WIDTH/2, ey = cy - CANVAS_HEIGHT/2;
+          document.getElementById('objCount').textContent = results.length;
+          
+          logDetectedObject(obj.label, obj.score, ex, ey);
+          
+          // Отрисовка
+          ctx.strokeStyle = '#0f0'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
+          ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI*2); ctx.fillStyle = '#0f0'; ctx.fill();
+          drawCrosshair('#0f0');
+          ctx.fillStyle = '#0f0'; ctx.font = 'bold 11px monospace';
+          ctx.fillText(`${obj.label} ${Math.round(obj.score*100)}%`, x, y-8);
+          
+          // Отправка на M5Stack
+          if (now - lastSend >= SEND_INTERVAL && mqtt?.isConnected()) {
+            const payload = JSON.stringify({ 
+              ex: Math.round(ex), ey: Math.round(ey), 
+              conf: parseFloat(obj.score.toFixed(3)), 
+              class: obj.label 
+            });
+            const msg = new Paho.MQTT.Message(payload);
+            msg.destinationName = document.getElementById('mqttTopic').value.trim() || 'servo/control';
+            mqtt.send(msg); sentCount++; document.getElementById('sentCount').textContent = sentCount; lastSend = now;
+          }
+          
+        } else {
+          // 🔽 КЛАССИФИКАЦИЯ (Запасной режим - без боксов)
+          const results = await detector(canvas, { topk: 1 });
+          const obj = results[0];
+          if (obj.score >= CONF_THRESHOLD) {
+            window.log(`🔍 [CLASS] ${obj.label} ${Math.round(obj.score*100)}%`, 'detect', 'log-detect');
+            // В этом режиме мы не отправляем координаты, только факт обнаружения
+          }
+          drawCrosshair('#fa0'); // Желтый крест для режима классификации
         }
         
-        const obj = results[0];
-        const x = obj.box.xmin, y = obj.box.ymin;
-        const w = obj.box.xmax - x, h = obj.box.ymax - y;
-        
-        let cx = x + w/2, cy = y + h/2;
-        if (isMirrored) cx = CANVAS_WIDTH - cx;
-        
-        const ex = cx - CANVAS_WIDTH/2, ey = cy - CANVAS_HEIGHT/2;
-        document.getElementById('objCount').textContent = results.length;
-        
-        // 🔽 ЛОГИРУЕМ ОБНАРУЖЕННЫЙ ОБЪЕКТ
-        logDetectedObject(obj.label, obj.score, ex, ey);
-        
-        // Отрисовка
-        ctx.strokeStyle = '#0f0'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
-        ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI*2); ctx.fillStyle = '#0f0'; ctx.fill();
-        drawCrosshair('#0f0');
-        ctx.fillStyle = '#0f0'; ctx.font = 'bold 11px monospace';
-        ctx.fillText(`${obj.label} ${Math.round(obj.score*100)}%`, x, y-8);
-        
-        // Отправка на M5Stack
-        if (now - lastSend >= SEND_INTERVAL && mqtt?.isConnected()) {
-          const payload = JSON.stringify({ 
-            ex: Math.round(ex), ey: Math.round(ey), 
-            conf: parseFloat(obj.score.toFixed(3)), 
-            class: obj.label 
-          });
-          const msg = new Paho.MQTT.Message(payload);
-          msg.destinationName = document.getElementById('mqttTopic').value.trim() || 'servo/control';
-          mqtt.send(msg); sentCount++; document.getElementById('sentCount').textContent = sentCount; lastSend = now;
-        }
-      } catch (e) { console.error('Detection error:', e); }
+      } catch (e) { 
+        console.error('Detection error:', e); 
+        window.log(`⚠️ Ошибка инференса: ${e.message}`, 'warn');
+      }
     }
 
     function drawCrosshair(color) {
@@ -337,7 +389,7 @@
     };
 
     window.onerror = (msg, url, line) => { window.log(`💥 ${msg} (L${line})`, 'err'); return false; };
-    console.log('🎯 Pan-Tilt AI Tracker v2 Ready');
+    console.log('🎯 Pan-Tilt AI Tracker v3 Ready');
   </script>
 </body>
 </html>
