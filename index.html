@@ -8,7 +8,7 @@
     <!-- TensorFlow.js -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js">
     </script>
-    <!-- YOLOv8-tfjs library (loads model + utils) -->
+    <!-- YOLOv8-tfjs library (correct package name: @hyuto) -->
     <script src="https://cdn.jsdelivr.net/npm/@hyuto/yolov8-tfjs@1.0.1/dist/yolov8.min.js">
     </script>
 
@@ -658,14 +658,12 @@
                     // Run YOLOv8 detection
                     let predictions = [];
                     try {
-                        // model.detect returns an array of objects: { class: 'person', score: 0.9, bbox: [x1, y1, x2, y2] }
-                        // bbox is in pixels (absolute coordinates) already scaled to video dimensions.
                         predictions = await model.detect(video);
                     } catch (e) {
                         console.warn('Detection error:', e);
                     }
 
-                    // Filter by confidence and convert bbox format: [x1, y1, x2, y2] -> [x, y, w, h]
+                    // Filter and convert bbox: [x1, y1, x2, y2] -> [x, y, w, h]
                     const detections = predictions
                         .filter(p => p.score >= minConfidence)
                         .map(p => ({
@@ -736,10 +734,11 @@
                     btnStart.textContent = '⏳ Loading YOLOv8...';
 
                     try {
-                        // This loads the pre-trained YOLOv8n model (nano)
+                        // The library exposes a global `yolo` object after the script loads.
+                        // It automatically downloads the model files from a CDN.
                         model = await yolo.load('yolov8n');
                     } catch (err) {
-                        alert('⚠️ Failed to load the YOLO model. Check your internet connection and try again.');
+                        alert('⚠️ Failed to load the YOLO model. Check your internet connection and try again. If the problem persists, you may need to host the model files locally.');
                         console.error(err);
                         stopCamera();
                         return;
