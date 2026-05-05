@@ -3,10 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Pan-Tilt AI Tracker</title>
+  <title>Pan-Tilt AI Tracker (YOLOv8n)</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #000; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; touch-action: none; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    body { 
+      background: #000; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; 
+      touch-action: none; display: flex; align-items: center; justify-content: center; min-height: 100vh;
+    }
     #videoContainer { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #000; z-index: 1; }
     #canvas { max-width: 100vw; max-height: 100vh; width: auto; height: auto; display: block; image-rendering: pixelated; }
     #statusBar { position: fixed; top: 10px; left: 10px; right: 10px; background: rgba(0,0,0,0.6); color: #0f0; padding: 8px 12px; border-radius: 8px; z-index: 1000; text-align: center; font-size: 12px; backdrop-filter: blur(4px); border: 1px solid rgba(0,255,0,0.3); }
@@ -66,29 +69,27 @@
       <input id="thresholdSlider" type="range" min="10" max="90" value="35" step="5">
       <div class="threshold-hint">Меньше = больше объектов. Больше = стабильнее.</div>
     </div>
-    <div class="threshold-box" id="colorPanel">
-      <label><span>🎨 Целевой цвет</span><span id="hueValue">Красный (0°)</span></label>
-      <input id="hueSlider" type="range" min="0" max="359" value="0" step="1">
-      <div class="threshold-hint">Настройте под ваш маркер. Работает даже без AI.</div>
-    </div>
     <div id="log"></div>
     <button class="full secondary" onclick="toggleConfig()">✖ Закрыть настройки</button>
   </div>
   <button id="toggleBtn" onclick="toggleConfig()">⚙️</button>
 
-  <!-- 🛡️ Стабильная версия без import.meta проблем -->
+  <!-- 🔄 ЗАМЕНЕНО: yolo-tfjs → @huggingface/transformers (официальный, стабильный) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@huggingface/transformers@2.17.0/dist/transformers.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0/dist/transformers.min.js"></script>
 
   <script>
     // ================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =================
     let detector, mqtt, vid, ctx, canvas, videoContainer;
-    let tracking = false, useAI = false;
+    let tracking = false;
     let lastSend = 0, frameCount = 0, lastFpsTime = 0, sentCount = 0;
-    let isMirrored = false, connectOptions = {};
-    let CONF_THRESHOLD = 0.35, TARGET_HUE = 0, HUE_TOLERANCE = 25;
+    let isMirrored = false;
+    let connectOptions = {};
+    let CONF_THRESHOLD = 0.35;
     
-    const SEND_INTERVAL = 100, CANVAS_WIDTH = 320, CANVAS_HEIGHT = 240;
+    const SEND_INTERVAL = 100;
+    const CANVAS_WIDTH = 320;
+    const CANVAS_HEIGHT = 240;
 
     const ui = {
       status: document.getElementById('statusBar'), log: document.getElementById('log'),
@@ -97,12 +98,8 @@
       objCount: document.getElementById('objCount'), sentCount: document.getElementById('sentCount'),
       mirrorState: document.getElementById('mirrorState'), configPanel: document.getElementById('configPanel'),
       thresholdSlider: document.getElementById('thresholdSlider'), thresholdValue: document.getElementById('thresholdValue'),
-      hueSlider: document.getElementById('hueSlider'), hueValue: document.getElementById('hueValue'),
       resLabel: document.getElementById('resLabel')
     };
-
-    const HUE_NAMES = {0:'Красный',30:'Оранжевый',60:'Жёлтый',90:'Жёлто-зелёный',120:'Зелёный',180:'Бирюзовый',240:'Синий',300:'Фиолетовый',360:'Красный'};
-    function getHueName(h) { return HUE_NAMES[Math.round(h/30)*30] || `${h}°`; }
 
     function log(msg, type = 'info') {
       const time = new Date().toLocaleTimeString();
@@ -125,12 +122,16 @@
       if (mqtt?.isConnected()) {
         const msg = new Paho.MQTT.Message(JSON.stringify({ ex: 0, ey: 0, conf: 1.0, cmd: 'center' }));
         msg.destinationName = document.getElementById('mqttTopic').value.trim() || 'servo/control';
-        mqtt.send(msg); log('🔄 Отправлена команда: центр', 'ok');
+        mqtt.send(msg);
+        log('🔄 Отправлена команда: центр', 'ok');
       } else log('⚠️ MQTT не подключен', 'warn');
     }
 
-    ui.thresholdSlider.addEventListener('input', e => { CONF_THRESHOLD = parseInt(e.target.value)/100; ui.thresholdValue.textContent = e.target.value+'%'; log(`🎯 Порог: ${e.target.value}%`); });
-    ui.hueSlider.addEventListener('input', e => { TARGET_HUE = parseInt(e.target.value); ui.hueValue.textContent = getHueName(TARGET_HUE) + ` (${TARGET_HUE}°)`; });
+    ui.thresholdSlider.addEventListener('input', e => { 
+      CONF_THRESHOLD = parseInt(e.target.value)/100; 
+      ui.thresholdValue.textContent = e.target.value+'%'; 
+      log(`🎯 Порог: ${e.target.value}%`); 
+    });
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && tracking) { log('⚠️ Вкладка в фоне', 'warn'); updateStatus('⚠️ Не сворачивайте!'); } 
@@ -183,65 +184,26 @@
       } catch (e) { log(`❌ ${e.message}`, 'err'); updateStatus(`❌ ${e.message}`); ui.btnStart.classList.remove('hidden'); ui.btnStop.classList.add('hidden'); }
     }
 
+    // 🔄 НОВАЯ ФУНКЦИЯ: Загрузка YOLOv8n через HuggingFace Transformers
     async function loadAI() {
       try {
-        // Проверка блокировки CDN
-        if (typeof window.transformers === 'undefined') throw new Error('CDN заблокирован (LocalCDN/AdBlock)');
+        if (typeof window.transformers === 'undefined') throw new Error('Библиотека @huggingface/transformers не загрузилась');
+        updateStatus('⏳ Загрузка YOLOv8n (15-40 сек, кэшируется)...'); 
+        log('Инициализация HuggingFace pipeline...', 'info');
         
         const { pipeline, env } = window.transformers;
-        env.allowLocalModels = false; env.useBrowserCache = true;
-        
-        updateStatus('⏳ Загрузка YOLOv8n...'); log('Инициализация модели...', 'info');
-        detector = await pipeline('object-detection', 'Xenova/yolov8n');
-        useAI = true;
-        log('✅ YOLOv8n готов!', 'ok'); updateStatus('🟢 ТРЕКИНГ АКТИВЕН (AI)');
-      } catch (e) {
-        log(`⚠️ AI недоступен: ${e.message}. Включён режим цветовой детекции.`, 'warn');
-        updateStatus('🎨 ТРЕКИНГ ПО ЦВЕТУ (AI отключён)');
-        useAI = false;
-      } finally {
-        tracking = true; lastFpsTime = performance.now(); loop();
-      }
-    }
+        env.allowLocalModels = false; // Обязательно для работы из CDN
+        env.useBrowserCache = true;   // Сохраняет модель в IndexedDB после первой загрузки
 
-    // ================= НАТИВНАЯ ЦВЕТОВАЯ ДЕТЕКЦИЯ =================
-    function detectColorNative(targetHue, tolerance) {
-      const imageData = ctx.getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-      const data = imageData.data;
-      let sumX = 0, sumY = 0, count = 0, minX = CANVAS_WIDTH, minY = CANVAS_HEIGHT, maxX = 0, maxY = 0;
-      
-      for (let y = 1; y < CANVAS_HEIGHT; y += 2) {
-        for (let x = 1; x < CANVAS_WIDTH; x += 2) {
-          const i = (y * CANVAS_WIDTH + x) * 4;
-          const r = data[i], g = data[i+1], b = data[i+2];
-          const max = Math.max(r, g, b), min = Math.min(r, g, b);
-          const d = max - min;
-          let h = 0;
-          if (d !== 0) {
-            switch(max) {
-              case r: h = ((g - b) / d + (g < b ? 6 : 0)) * 60; break;
-              case g: h = ((b - r) / d + 2) * 60; break;
-              case b: h = ((r - g) / d + 4) * 60; break;
-            }
-          }
-          const s = max === 0 ? 0 : d / max;
-          if (s > 0.35 && max > 70) {
-            let diff = Math.abs(h - targetHue);
-            if (diff > 180) diff = 360 - diff;
-            if (diff < tolerance) {
-              sumX += x; sumY += y; count++;
-              if (x < minX) minX = x; if (x > maxX) maxX = x;
-              if (y < minY) minY = y; if (y > maxY) maxY = y;
-            }
-          }
-        }
-      }
-      if (count < 15) return null;
-      return {
-        class: getHueName(targetHue), score: Math.min(count/400, 1.0),
-        bbox: [minX, minY, maxX - minX, maxY - minY],
-        cx: sumX/count, cy: sumY/count
-      };
+        // Загружаем официальный ONNX-чекпоинт YOLOv8n
+        detector = await pipeline('object-detection', 'Xenova/yolov8n');
+        
+        log('✅ YOLOv8n готов!', 'ok'); 
+        updateStatus('🟢 ТРЕКИНГ АКТИВЕН');
+        tracking = true; 
+        lastFpsTime = performance.now(); 
+        loop();
+      } catch (e) { log(`❌ YOLO: ${e.message}`, 'err'); updateStatus('❌ AI Failed'); }
     }
 
     // ================= ОСНОВНОЙ ЦИКЛ =================
@@ -254,23 +216,27 @@
       ctx.drawImage(vid, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
       
       try {
-        let obj = null;
-        if (useAI && detector) {
-          const raw = await detector(canvas, { threshold: CONF_THRESHOLD });
-          obj = raw.map(p => ({ class: p.label, score: p.score, bbox: [p.box.xmin, p.box.ymin, p.box.xmax-p.box.xmin, p.box.ymax-p.box.ymin] }))[0] || null;
-        } else {
-          obj = detectColorNative(TARGET_HUE, HUE_TOLERANCE);
-        }
-
-        ui.objCount.textContent = obj ? 1 : 0;
-        if (!obj) { drawCrosshair('#f00'); return; }
+        // 🔄 Детекция через HuggingFace pipeline
+        const rawPreds = await detector(canvas, { threshold: CONF_THRESHOLD });
         
+        // 🔄 Преобразование формата: { box: {xmin, ymin, xmax, ymax}, label, score } → [x, y, w, h]
+        const valid = rawPreds.map(p => ({
+          class: p.label,
+          score: p.score,
+          bbox: [p.box.xmin, p.box.ymin, p.box.xmax - p.box.xmin, p.box.ymax - p.box.ymin]
+        }));
+        
+        ui.objCount.textContent = valid.length;
+        if (valid.length === 0) { drawCrosshair('#f00'); return; }
+        
+        const obj = valid[0];
         const [x, y, w, h] = obj.bbox;
-        let cx = obj.cx || (x + w/2), cy = obj.cy || (y + h/2);
+        let cx = x + w/2, cy = y + h/2;
         if (isMirrored) cx = CANVAS_WIDTH - cx;
         
         const ex = cx - CANVAS_WIDTH/2, ey = cy - CANVAS_HEIGHT/2;
         
+        // Отрисовка
         ctx.strokeStyle = '#0f0'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
         ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI*2); ctx.fillStyle = '#0f0'; ctx.fill();
         drawCrosshair('#0f0');
@@ -307,7 +273,7 @@
     }
 
     window.onerror = (msg, url, line) => { log(`💥 ${msg} (L${line})`, 'err'); return false; };
-    console.log('🎯 Pan-Tilt Tracker Ready');
+    console.log('🎯 Pan-Tilt Tracker Ready (YOLOv8n via HuggingFace)');
   </script>
 </body>
 </html>
