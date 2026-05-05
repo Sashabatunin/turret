@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Pan-Tilt AI Tracker (MediaPipe)</title>
+  <title>Pan-Tilt AI Tracker</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; touch-action: none; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
@@ -73,9 +73,10 @@
 
   <button id="toggleBtn" onclick="toggleConfig()">⚙️</button>
 
-  <!-- 🔽 MediaPipe Tasks (официальный CDN) -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+  <!-- 🔽 БИБЛИОТЕКИ С unpkg.com (надёжный CDN) -->
+  <script src="https://unpkg.com/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+  <script src="https://unpkg.com/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+  <script src="https://unpkg.com/paho-mqtt@1.1.0/mqtt.min.js"></script>
 
   <script>
     // ================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =================
@@ -88,12 +89,11 @@
     let lastLoggedObject = null;
     let lastLogTime = 0;
     const LOG_COOLDOWN = 2000;
-    
     const SEND_INTERVAL = 100;
     const CANVAS_WIDTH = 320;
     const CANVAS_HEIGHT = 240;
 
-    // Глобальные функции для onclick-обработчиков
+    // Глобальные функции
     window.log = (msg, type = 'info', className = '') => {
       const time = new Date().toLocaleTimeString();
       const cls = type === 'err' ? 'log-err' : type === 'warn' ? 'log-warn' : type === 'detect' ? 'log-detect' : 'log-ok';
@@ -205,35 +205,22 @@
       }
     };
 
-    // ================= 🔽 ЗАГРУЗКА MEDIAPIPE МОДЕЛИ =================
+    // ================= ЗАГРУЗКА МОДЕЛИ (COCO-SSD) =================
     async function loadAI() {
       try {
-        window.log('📥 Инициализация ObjectDetector...', 'info');
-        
-        // MediaPipe загружает модель через свой CDN (jsdelivr)
-        const ObjectDetector = await vision.FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
-        );
-        
-        detector = await vision.ObjectDetector.createFromOptions(ObjectDetector, {
-          baseOptions: {
-            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float32/1/efficientdet_lite0.tflite",
-            delegate: "GPU" // Автоматически выберет WebGL/WebGPU
-          },
-          runningMode: "IMAGE",
-          scoreThreshold: CONF_THRESHOLD,
-          maxResults: 5
+        window.log('📥 Загрузка COCO-SSD (lite_mobilenet_v2)...', 'info');
+        // cocoSsd.load() автоматически использует unpkg через глобальную переменную
+        detector = await cocoSsd.load({ 
+          base: 'lite_mobilenet_v2',
+          modelUrl: 'https://unpkg.com/@tensorflow-models/coco-ssd@2.2.3/model/lite_mobilenet_v2/'
         });
-        
-        window.log('✅ MediaPipe модель загружена!', 'ok');
+        window.log('✅ AI модель загружена!', 'ok');
         window.updateStatus('🟢 ТРЕКИНГ АКТИВЕН');
         tracking = true; lastFpsTime = performance.now(); loop();
-        
       } catch (e) {
         window.log(`❌ Ошибка AI: ${e.message}`, 'err');
         window.updateStatus('❌ AI Failed');
-        // Предложение использовать простую детекцию по движению как запасной вариант
-        window.log('💡 Совет: проверьте подключение к интернету или попробуйте другой браузер', 'warn');
+        window.log('💡 Попробуйте: 1) Обновить страницу 2) Проверить интернет 3) Использовать другой браузер', 'warn');
       }
     }
 
@@ -247,7 +234,6 @@
         if (Math.abs(ex) > 15) direction.push(ex > 0 ? '→' : '←');
         if (Math.abs(ey) > 15) direction.push(ey > 0 ? '↓' : '↑');
         const dirStr = direction.length ? ` [${direction.join('')}]` : ' [● центр]';
-        
         window.log(`🔍 ${label.toUpperCase()} ${Math.round(score*100)}%${dirStr} dx:${Math.round(ex)} dy:${Math.round(ey)}`, 'detect', 'log-detect');
         lastLoggedObject = objKey;
         lastLogTime = now;
@@ -266,10 +252,11 @@
       ctx.drawImage(vid, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
       
       try {
-        // 🔽 MediaPipe detect
-        const results = detector.detect(canvas);
+        const preds = await detector.detect(canvas);
+        const valid = preds.filter(p => p.score >= CONF_THRESHOLD);
+        document.getElementById('objCount').textContent = valid.length;
         
-        if (!results.detections || results.detections.length === 0) { 
+        if (valid.length === 0) { 
           drawCrosshair('#f00'); 
           if (lastLoggedObject && (now - lastLogTime) >= 3000) {
             window.log('🔻 Объект потерян', 'warn');
@@ -278,44 +265,33 @@
           return; 
         }
         
-        const obj = results.detections[0]; // Самый вероятный объект
-        const bbox = obj.boundingBox; // {originX, originY, width, height}
-        
-        const x = bbox.originX, y = bbox.originY;
-        const w = bbox.width, h = bbox.height;
-        
+        const obj = valid[0];
+        const [x, y, w, h] = obj.bbox;
         let cx = x + w/2, cy = y + h/2;
         if (isMirrored) cx = CANVAS_WIDTH - cx;
         
         const ex = cx - CANVAS_WIDTH/2, ey = cy - CANVAS_HEIGHT/2;
-        document.getElementById('objCount').textContent = results.detections.length;
         
-        // Получаем класс и уверенность (MediaPipe может возвращать несколько категорий)
-        const category = obj.categories?.[0] || {categoryName: 'object', score: 0};
-        const label = category.categoryName;
-        const score = category.score;
-        
-        logDetectedObject(label, score, ex, ey);
+        logDetectedObject(obj.class, obj.score, ex, ey);
         
         // Отрисовка
         ctx.strokeStyle = '#0f0'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
         ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI*2); ctx.fillStyle = '#0f0'; ctx.fill();
         drawCrosshair('#0f0');
         ctx.fillStyle = '#0f0'; ctx.font = 'bold 11px monospace';
-        ctx.fillText(`${label} ${Math.round(score*100)}%`, x, y-8);
+        ctx.fillText(`${obj.class} ${Math.round(obj.score*100)}%`, x, y-8);
         
         // Отправка на M5Stack
         if (now - lastSend >= SEND_INTERVAL && mqtt?.isConnected()) {
           const payload = JSON.stringify({ 
             ex: Math.round(ex), ey: Math.round(ey), 
-            conf: parseFloat(score.toFixed(3)), 
-            class: label 
+            conf: parseFloat(obj.score.toFixed(3)), 
+            class: obj.class 
           });
           const msg = new Paho.MQTT.Message(payload);
           msg.destinationName = document.getElementById('mqttTopic').value.trim() || 'servo/control';
           mqtt.send(msg); sentCount++; document.getElementById('sentCount').textContent = sentCount; lastSend = now;
         }
-        
       } catch (e) { 
         console.error('Detection error:', e); 
         window.log(`⚠️ Ошибка инференса: ${e.message}`, 'warn');
@@ -343,7 +319,7 @@
     };
 
     window.onerror = (msg, url, line) => { window.log(`💥 ${msg} (L${line})`, 'err'); return false; };
-    console.log('🎯 Pan-Tilt AI Tracker (MediaPipe) Ready');
+    console.log('🎯 Pan-Tilt AI Tracker Ready');
   </script>
 </body>
 </html>
