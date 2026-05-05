@@ -50,7 +50,7 @@ async function init() {
 
   // 2. Load face‑api models
   try {
-    await faceapi.nets.tinyFaceDetector.load('turret/models');
+    await faceapi.nets.tinyFaceDetector.load('/models');
     await faceapi.nets.faceLandmark68TinyNet.load('/models'); // may be optional, but we load it
     statusDiv.textContent = 'Face models loaded. Connecting MQTT…';
     btnFace.disabled = false;
