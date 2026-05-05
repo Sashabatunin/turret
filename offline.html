@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Офлайн — Pan-Tilt AI Tracker</title>
+  <style>
+    body { background: #000; color: #0f0; font-family: monospace; display: flex; align-items: center; justify-content: center; min-height: 100vh; text-align: center; padding: 20px; }
+    .card { background: rgba(0,50,0,0.8); padding: 20px; border-radius: 12px; border: 1px solid #0f0; max-width: 400px; }
+    button { background: #005500; color: #fff; border: none; padding: 10px 20px; border-radius: 6px; margin-top: 15px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>🔌 Вы офлайн</h2>
+    <p>Приложение загружено, но нет соединения с интернетом.</p>
+    <p id="status">Проверка кэша...</p>
+    <button onclick="location.reload()">🔄 Попробовать снова</button>
+  </div>
+  <script>
+    // Простая проверка: если модель в кэше — можно работать
+    caches.match('https://unpkg.com/@tensorflow-models/coco-ssd@2.2.3/model/lite_mobilenet_v2/model.json')
+      .then(r => {
+        document.getElementById('status').textContent = r ? '✅ Модель в кэше — можно запускать!' : '⏳ Модель ещё не кэширована';
+        if (r) setTimeout(() => location.href = '/', 2000);
+      });
+  </script>
+</body>
+</html>
