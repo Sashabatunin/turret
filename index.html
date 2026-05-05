@@ -1,279 +1,219 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Pan-Tilt AI Tracker (YOLOv8n)</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { 
-      background: #000; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; 
-      touch-action: none; display: flex; align-items: center; justify-content: center; min-height: 100vh;
-    }
-    #videoContainer { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #000; z-index: 1; }
-    #canvas { max-width: 100vw; max-height: 100vh; width: auto; height: auto; display: block; image-rendering: pixelated; }
-    #statusBar { position: fixed; top: 10px; left: 10px; right: 10px; background: rgba(0,0,0,0.6); color: #0f0; padding: 8px 12px; border-radius: 8px; z-index: 1000; text-align: center; font-size: 12px; backdrop-filter: blur(4px); border: 1px solid rgba(0,255,0,0.3); }
-    #configPanel { position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 1500; display: flex; flex-direction: column; padding: 20px; overflow-y: auto; transform: translateY(100%); opacity: 0; pointer-events: none; transition: transform 0.3s ease, opacity 0.3s ease; }
-    #configPanel.open { transform: translateY(0); opacity: 1; pointer-events: auto; }
-    .row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-    .row input { flex: 1; min-width: 100px; background: rgba(30,30,30,0.9); color: #0f0; border: 1px solid #444; padding: 10px; border-radius: 8px; font-size: 14px; outline: none; }
-    .row input:focus { border-color: #0f0; box-shadow: 0 0 0 2px rgba(0,255,0,0.2); }
-    button { background: #005500; color: #fff; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; transition: transform 0.1s, background 0.2s; }
-    button:active { transform: scale(0.96); background: #003300; }
-    button.secondary { background: #333; }
-    button.danger { background: #660000; }
-    button.full { width: 100%; margin-top: 10px; }
-    #log { margin-top: 15px; max-height: 25vh; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; font-family: monospace; font-size: 11px; color: #999; overflow-y: auto; line-height: 1.3; }
-    .log-item { margin: 2px 0; }
-    .log-err { color: #f55; } .log-warn { color: #fa0; } .log-ok { color: #8f8; }
-    #toggleBtn { position: fixed; bottom: 20px; right: 20px; z-index: 2000; width: 50px; height: 50px; border-radius: 50%; background: #005500; color: #fff; border: 2px solid rgba(0,255,0,0.4); font-size: 20px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; transition: transform 0.2s, background 0.2s; }
-    #toggleBtn:active { transform: scale(0.9); background: #003300; }
-    #stats { position: fixed; bottom: 20px; left: 20px; background: rgba(0,0,0,0.6); color: #0f0; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-family: monospace; z-index: 1000; backdrop-filter: blur(4px); }
-    .threshold-box { margin-top: 15px; background: rgba(30,30,30,0.6); padding: 12px; border-radius: 8px; border: 1px solid rgba(0,255,0,0.2); }
-    .threshold-box label { display: flex; justify-content: space-between; font-size: 12px; color: #0f0; margin-bottom: 6px; }
-    input[type="range"] { width: 100%; accent-color: #0f0; height: 6px; }
-    .threshold-hint { font-size: 10px; color: #888; margin-top: 5px; }
-    .hidden { display: none !important; }
-    #resLabel { position: fixed; top: 10px; right: 10px; background: rgba(0,0,0,0.6); color: #0f0; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-family: monospace; z-index: 1000; backdrop-filter: blur(4px); }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Трансляция с камеры</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            font-size: 2rem;
+            text-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+        }
+
+        .video-container {
+            position: relative;
+            background: #111;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 0 30px rgba(100, 100, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            max-width: 90vw;
+            min-width: 320px;
+            min-height: 240px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        video {
+            display: block;
+            width: 640px;
+            max-width: 100%;
+            height: auto;
+        }
+
+        .controls {
+            margin-top: 20px;
+        }
+
+        button {
+            padding: 12px 28px;
+            font-size: 1rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        .btn-stop {
+            background: #ff1744;
+            color: #fff;
+        }
+
+        .btn-stop:hover {
+            background: #ff5252;
+            box-shadow: 0 0 20px rgba(255, 23, 68, 0.5);
+        }
+
+        button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .status {
+            margin-top: 15px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            background: rgba(255, 255, 255, 0.1);
+            transition: all 0.3s;
+        }
+
+        .status.active {
+            background: rgba(0, 200, 83, 0.3);
+            color: #69f0ae;
+        }
+
+        .status.inactive {
+            background: rgba(255, 23, 68, 0.3);
+            color: #ff8a80;
+        }
+
+        .error-msg {
+            margin-top: 15px;
+            color: #ff8a80;
+            background: rgba(255, 23, 68, 0.15);
+            padding: 12px 20px;
+            border-radius: 8px;
+            display: none;
+            text-align: center;
+        }
+        
+        /* Заглушка, пока камера не включилась */
+        .placeholder {
+            color: #888;
+            font-size: 1.2rem;
+        }
+    </style>
 </head>
 <body>
-  <video id="vid" style="display:none" autoplay playsinline muted></video>
-  <div id="videoContainer"><canvas id="canvas"></canvas></div>
-  
-  <div id="statusBar">📴 Готов к запуску</div>
-  <div id="resLabel" class="hidden">320×240</div>
-  <div id="stats" class="hidden">FPS:<span id="fps">0</span> | Obj:<span id="objCount">0</span> | Sent:<span id="sentCount">0</span></div>
 
-  <div id="configPanel">
-    <h2 style="color:#0f0; margin-bottom: 15px; text-align:center;">⚙️ Настройки трекера</h2>
-    <div class="row"><input id="mqttHost" placeholder="MQTT Host" value="367d7905056a451cac7755db6f5bcc81.s1.eu.hivemq.cloud"></div>
-    <div class="row">
-      <input id="mqttPort" placeholder="Port" value="8884" type="number" style="max-width: 80px;">
-      <input id="mqttUser" placeholder="Username">
+    <h1>📷 Трансляция с камеры</h1>
+
+    <div class="video-container">
+        <div class="placeholder" id="placeholder">Загрузка...</div>
+        <video id="video" autoplay playsinline muted style="display: none;"></video>
     </div>
-    <div class="row">
-      <input id="mqttPass" type="password" placeholder="Password">
-      <input id="mqttTopic" placeholder="Topic" value="servo/control">
+
+    <div class="controls">
+        <button class="btn-stop" id="btnStop" onclick="stopCamera()" disabled>⏹ Выключить камеру</button>
     </div>
-    <div style="display: flex; gap: 8px; margin-top: 10px;">
-      <button id="btnStart" onclick="init()" style="flex:1;">🚀 СТАРТ</button>
-      <button id="btnStop" class="hidden danger" onclick="stop()" style="flex:1;">⏹ СТОП</button>
-    </div>
-    <div style="display: flex; gap: 8px; margin-top: 8px;">
-      <button class="secondary" onclick="toggleMirror()" style="flex:1;">🪞 Зеркало: <span id="mirrorState">OFF</span></button>
-      <button class="secondary" onclick="resetServos()" style="flex:1;">🔄 Центр</button>
-    </div>
-    <div class="threshold-box">
-      <label><span>🎯 Порог уверенности</span><span id="thresholdValue">35%</span></label>
-      <input id="thresholdSlider" type="range" min="10" max="90" value="35" step="5">
-      <div class="threshold-hint">Меньше = больше объектов. Больше = стабильнее.</div>
-    </div>
-    <div id="log"></div>
-    <button class="full secondary" onclick="toggleConfig()">✖ Закрыть настройки</button>
-  </div>
-  <button id="toggleBtn" onclick="toggleConfig()">⚙️</button>
 
-  <!-- 🔄 ЗАМЕНЕНО: yolo-tfjs → @huggingface/transformers (официальный, стабильный) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0/dist/transformers.min.js"></script>
+    <div class="status inactive" id="status">Ожидание доступа...</div>
+    <div class="error-msg" id="errorMsg"></div>
 
-  <script>
-    // ================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =================
-    let detector, mqtt, vid, ctx, canvas, videoContainer;
-    let tracking = false;
-    let lastSend = 0, frameCount = 0, lastFpsTime = 0, sentCount = 0;
-    let isMirrored = false;
-    let connectOptions = {};
-    let CONF_THRESHOLD = 0.35;
-    
-    const SEND_INTERVAL = 100;
-    const CANVAS_WIDTH = 320;
-    const CANVAS_HEIGHT = 240;
+    <script>
+        let stream = null;
 
-    const ui = {
-      status: document.getElementById('statusBar'), log: document.getElementById('log'),
-      btnStart: document.getElementById('btnStart'), btnStop: document.getElementById('btnStop'),
-      stats: document.getElementById('stats'), fps: document.getElementById('fps'),
-      objCount: document.getElementById('objCount'), sentCount: document.getElementById('sentCount'),
-      mirrorState: document.getElementById('mirrorState'), configPanel: document.getElementById('configPanel'),
-      thresholdSlider: document.getElementById('thresholdSlider'), thresholdValue: document.getElementById('thresholdValue'),
-      resLabel: document.getElementById('resLabel')
-    };
+        const video      = document.getElementById('video');
+        const btnStop    = document.getElementById('btnStop');
+        const status     = document.getElementById('status');
+        const errorMsg   = document.getElementById('errorMsg');
+        const placeholder = document.getElementById('placeholder');
 
-    function log(msg, type = 'info') {
-      const time = new Date().toLocaleTimeString();
-      const cls = type === 'err' ? 'log-err' : type === 'warn' ? 'log-warn' : 'log-ok';
-      const div = document.createElement('div');
-      div.className = `log-item ${cls}`; div.textContent = `[${time}] ${msg}`;
-      ui.log.insertBefore(div, ui.log.firstChild);
-      while (ui.log.children.length > 20) ui.log.removeChild(ui.log.lastChild);
-      console.log(`[${type.toUpperCase()}] ${msg}`);
-    }
-    function updateStatus(msg) { ui.status.textContent = msg; }
-    function toggleConfig() { ui.configPanel.classList.toggle('open'); }
-    function toggleMirror() {
-      isMirrored = !isMirrored;
-      canvas.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
-      ui.mirrorState.textContent = isMirrored ? 'ON' : 'OFF';
-      ui.mirrorState.style.color = isMirrored ? '#0f0' : '#888';
-    }
-    function resetServos() {
-      if (mqtt?.isConnected()) {
-        const msg = new Paho.MQTT.Message(JSON.stringify({ ex: 0, ey: 0, conf: 1.0, cmd: 'center' }));
-        msg.destinationName = document.getElementById('mqttTopic').value.trim() || 'servo/control';
-        mqtt.send(msg);
-        log('🔄 Отправлена команда: центр', 'ok');
-      } else log('⚠️ MQTT не подключен', 'warn');
-    }
+        // Автоматический запуск при загрузке страницы
+        window.addEventListener('DOMContentLoaded', startCamera);
 
-    ui.thresholdSlider.addEventListener('input', e => { 
-      CONF_THRESHOLD = parseInt(e.target.value)/100; 
-      ui.thresholdValue.textContent = e.target.value+'%'; 
-      log(`🎯 Порог: ${e.target.value}%`); 
-    });
+        async function startCamera() {
+            errorMsg.style.display = 'none';
+            status.textContent = 'Запрос доступа к камере...';
 
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden && tracking) { log('⚠️ Вкладка в фоне', 'warn'); updateStatus('⚠️ Не сворачивайте!'); } 
-      else if (!document.hidden && tracking && mqtt && !mqtt.isConnected()) { log('🔄 Восстанавливаю MQTT...', 'info'); mqtt.connect(connectOptions); }
-    });
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width:  { ideal: 1280 },
+                        height: { ideal: 720  },
+                        facingMode: 'user'
+                    },
+                    audio: false
+                });
 
-    // ================= ИНИЦИАЛИЗАЦИЯ =================
-    async function init() {
-      try {
-        ui.btnStart.classList.add('hidden'); ui.btnStop.classList.remove('hidden'); ui.stats.classList.remove('hidden');
-        updateStatus('📷 Камера...'); log('Запрос камеры...', 'info');
-        
-        vid = document.getElementById('vid'); canvas = document.getElementById('canvas'); videoContainer = document.getElementById('videoContainer');
-        ctx = canvas.getContext('2d');
-        
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 320 }, height: { ideal: 240 } }, audio: false });
-        vid.srcObject = stream;
-        await new Promise(resolve => { vid.onloadedmetadata = () => { vid.play(); resolve(); }; });
-        
-        canvas.width = CANVAS_WIDTH; canvas.height = CANVAS_HEIGHT;
-        ui.resLabel.textContent = `${CANVAS_WIDTH}×${CANVAS_HEIGHT}`;
-        ui.resLabel.classList.remove('hidden');
-        log('✅ Камера OK', 'ok'); updateStatus('🔌 MQTT...');
+                // Если доступ получен
+                video.srcObject = stream;
+                video.play();
 
-        const host = document.getElementById('mqttHost').value.trim();
-        const port = parseInt(document.getElementById('mqttPort').value) || 8884;
-        const user = document.getElementById('mqttUser').value.trim();
-        const pass = document.getElementById('mqttPass').value.trim();
-        const topic = document.getElementById('mqttTopic').value.trim() || 'servo/control';
-        if (!host) throw new Error('Укажите MQTT Host');
-        
-        const clientId = `web_pt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        mqtt = new Paho.MQTT.Client(host, port, `/mqtt`, clientId);
+                video.style.display = 'block';
+                placeholder.style.display = 'none';
 
-        connectOptions = {
-          timeout: 30, keepAliveInterval: 30, cleanSession: true,
-          useSSL: location.protocol === 'https:', mqttVersion: 4,
-          onSuccess: () => { log('✅ MQTT подключен', 'ok'); updateStatus('⏳ AI...'); mqtt.subscribe(topic); loadAI(); },
-          onFailure: (res) => { log(`❌ MQTT: ${res.errorMessage} (code: ${res.errorCode})`, 'err'); updateStatus('❌ MQTT Failed'); setTimeout(() => { if (!mqtt.isConnected()) mqtt.connect(connectOptions); }, 3000); }
-        };
-        if (user) { connectOptions.userName = user; connectOptions.password = pass; }
+                btnStop.disabled = false;
+                status.textContent = '🟢 Камера активна';
+                status.className   = 'status active';
 
-        mqtt.onConnectionLost = (res) => {
-          log(`🔴 MQTT отключен: ${res.errorMessage} (code: ${res.errorCode})`, 'err');
-          updateStatus(`🔴 Lost: ${res.errorMessage}`);
-          if ([0, 1, 3, 6, 7].includes(res.errorCode)) setTimeout(() => { if (!mqtt.isConnected()) mqtt.connect(connectOptions); }, 3000);
-        };
-        mqtt.connect(connectOptions);
-        toggleConfig();
-      } catch (e) { log(`❌ ${e.message}`, 'err'); updateStatus(`❌ ${e.message}`); ui.btnStart.classList.remove('hidden'); ui.btnStop.classList.add('hidden'); }
-    }
-
-    // 🔄 НОВАЯ ФУНКЦИЯ: Загрузка YOLOv8n через HuggingFace Transformers
-    async function loadAI() {
-      try {
-        if (typeof window.transformers === 'undefined') throw new Error('Библиотека @huggingface/transformers не загрузилась');
-        updateStatus('⏳ Загрузка YOLOv8n (15-40 сек, кэшируется)...'); 
-        log('Инициализация HuggingFace pipeline...', 'info');
-        
-        const { pipeline, env } = window.transformers;
-        env.allowLocalModels = false; // Обязательно для работы из CDN
-        env.useBrowserCache = true;   // Сохраняет модель в IndexedDB после первой загрузки
-
-        // Загружаем официальный ONNX-чекпоинт YOLOv8n
-        detector = await pipeline('object-detection', 'Xenova/yolov8n');
-        
-        log('✅ YOLOv8n готов!', 'ok'); 
-        updateStatus('🟢 ТРЕКИНГ АКТИВЕН');
-        tracking = true; 
-        lastFpsTime = performance.now(); 
-        loop();
-      } catch (e) { log(`❌ YOLO: ${e.message}`, 'err'); updateStatus('❌ AI Failed'); }
-    }
-
-    // ================= ОСНОВНОЙ ЦИКЛ =================
-    async function loop() {
-      if (!tracking) return;
-      requestAnimationFrame(loop); frameCount++;
-      const now = performance.now(); 
-      if (now - lastFpsTime >= 1000) { ui.fps.textContent = frameCount; frameCount = 0; lastFpsTime = now; }
-      
-      ctx.drawImage(vid, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-      
-      try {
-        // 🔄 Детекция через HuggingFace pipeline
-        const rawPreds = await detector(canvas, { threshold: CONF_THRESHOLD });
-        
-        // 🔄 Преобразование формата: { box: {xmin, ymin, xmax, ymax}, label, score } → [x, y, w, h]
-        const valid = rawPreds.map(p => ({
-          class: p.label,
-          score: p.score,
-          bbox: [p.box.xmin, p.box.ymin, p.box.xmax - p.box.xmin, p.box.ymax - p.box.ymin]
-        }));
-        
-        ui.objCount.textContent = valid.length;
-        if (valid.length === 0) { drawCrosshair('#f00'); return; }
-        
-        const obj = valid[0];
-        const [x, y, w, h] = obj.bbox;
-        let cx = x + w/2, cy = y + h/2;
-        if (isMirrored) cx = CANVAS_WIDTH - cx;
-        
-        const ex = cx - CANVAS_WIDTH/2, ey = cy - CANVAS_HEIGHT/2;
-        
-        // Отрисовка
-        ctx.strokeStyle = '#0f0'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
-        ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI*2); ctx.fillStyle = '#0f0'; ctx.fill();
-        drawCrosshair('#0f0');
-        ctx.fillStyle = '#0f0'; ctx.font = 'bold 11px monospace';
-        ctx.fillText(`${obj.class} ${Math.round(obj.score*100)}%`, x, y-8);
-        
-        if (now - lastSend >= SEND_INTERVAL && mqtt?.isConnected()) {
-          const payload = JSON.stringify({ ex: Math.round(ex), ey: Math.round(ey), conf: parseFloat(obj.score.toFixed(3)), class: obj.class });
-          const msg = new Paho.MQTT.Message(payload);
-          msg.destinationName = document.getElementById('mqttTopic').value.trim() || 'servo/control';
-          mqtt.send(msg); sentCount++; ui.sentCount.textContent = sentCount; lastSend = now;
+            } catch (err) {
+                console.error('Ошибка:', err);
+                placeholder.textContent = 'Нет сигнала';
+                
+                // Обработка ошибок доступа
+                if (err.name === 'NotAllowedError') {
+                    errorMsg.textContent = '⚠ Вы запретили доступ к камере. Разрешите доступ в настройках браузера и обновите страницу.';
+                } else if (err.name === 'NotFoundError') {
+                    errorMsg.textContent = '⚠ Камера не найдена на устройстве.';
+                } else {
+                    errorMsg.textContent = `⚠ Ошибка: ${err.message}`;
+                }
+                errorMsg.style.display = 'block';
+                status.textContent = 'Камера выключена';
+            }
         }
-      } catch (e) { console.error(e); }
-    }
 
-    function drawCrosshair(color) {
-      ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.setLineDash([5,5]);
-      ctx.beginPath();
-      ctx.moveTo(CANVAS_WIDTH/2 - 15, CANVAS_HEIGHT/2); ctx.lineTo(CANVAS_WIDTH/2 + 15, CANVAS_HEIGHT/2);
-      ctx.moveTo(CANVAS_WIDTH/2, CANVAS_HEIGHT/2 - 15); ctx.lineTo(CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 15);
-      ctx.stroke(); ctx.setLineDash([]);
-    }
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+                stream = null;
+            }
 
-    function stop() {
-      tracking = false; updateStatus('⏹ Остановлено');
-      if (vid?.srcObject) vid.srcObject.getTracks().forEach(t => t.stop());
-      if (mqtt?.isConnected()) mqtt.disconnect();
-      ui.btnStart.classList.remove('hidden'); ui.btnStop.classList.add('hidden'); ui.stats.classList.add('hidden');
-      ui.resLabel.classList.add('hidden');
-      ctx.fillStyle = '#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
-      ctx.fillStyle = '#666'; ctx.font = '16px monospace'; ctx.textAlign = 'center';
-      ctx.fillText('Остановлено', canvas.width/2, canvas.height/2); ctx.textAlign = 'left';
-      toggleConfig();
-    }
+            video.style.display = 'none';
+            placeholder.style.display = 'block';
+            placeholder.textContent = 'Камера выключена';
 
-    window.onerror = (msg, url, line) => { log(`💥 ${msg} (L${line})`, 'err'); return false; };
-    console.log('🎯 Pan-Tilt Tracker Ready (YOLOv8n via HuggingFace)');
-  </script>
+            btnStop.disabled = true;
+            status.textContent = 'Камера выключена';
+            status.className   = 'status inactive';
+            
+            // Кнопка превращается в "Включить" для перезапуска
+            btnStop.textContent = '▶ Включить камеру';
+            btnStop.style.background = '#00c853';
+            btnStop.onclick = restartCamera;
+        }
+
+        function restartCamera() {
+            btnStop.textContent = '⏹ Выключить камеру';
+            btnStop.style.background = '#ff1744';
+            btnStop.onclick = stopCamera;
+            startCamera();
+        }
+    </script>
+
 </body>
 </html>
