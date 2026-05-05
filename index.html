@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Pan-Tilt AI Tracker</title>
+  <title>Pan-Tilt AI Tracker v2</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; touch-action: none; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
@@ -21,10 +21,8 @@
     button.danger { background: #660000; }
     button.full { width: 100%; margin-top: 10px; }
     #log { margin-top: 15px; max-height: 25vh; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; font-family: monospace; font-size: 11px; color: #999; overflow-y: auto; line-height: 1.3; }
-    .log-item { margin: 2px 0; padding: 2px 4px; border-left: 2px solid transparent; }
-    .log-item:hover { background: rgba(0,255,0,0.05); border-left-color: #0f0; }
+    .log-item { margin: 2px 0; }
     .log-err { color: #f55; } .log-warn { color: #fa0; } .log-ok { color: #8f8; }
-    .log-detect { color: #0ff; font-weight: 500; }
     #toggleBtn { position: fixed; bottom: 20px; right: 20px; z-index: 2000; width: 50px; height: 50px; border-radius: 50%; background: #005500; color: #fff; border: 2px solid rgba(0,255,0,0.4); font-size: 20px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; transition: transform 0.2s, background 0.2s; }
     #toggleBtn:active { transform: scale(0.9); background: #003300; }
     #stats { position: fixed; bottom: 20px; left: 20px; background: rgba(0,0,0,0.6); color: #0f0; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-family: monospace; z-index: 1000; backdrop-filter: blur(4px); }
@@ -73,12 +71,11 @@
 
   <button id="toggleBtn" onclick="toggleConfig()">⚙️</button>
 
-  <!-- 🔽 БИБЛИОТЕКИ С unpkg.com (надёжный CDN) -->
-  <script src="https://unpkg.com/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
-  <script src="https://unpkg.com/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
-  <script src="https://unpkg.com/paho-mqtt@1.1.0/mqtt.min.js"></script>
+  <!-- 🔽 НОВЫЕ БИБЛИОТЕКИ: Transformers.js вместо COCO-SSD -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+  <script type="module">
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2';
 
-  <script>
     // ================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =================
     let detector, mqtt, vid, ctx, canvas, videoContainer;
     let tracking = false;
@@ -86,23 +83,23 @@
     let isMirrored = false;
     let connectOptions = {};
     let CONF_THRESHOLD = 0.35;
-    let lastLoggedObject = null;
-    let lastLogTime = 0;
-    const LOG_COOLDOWN = 2000;
+    
     const SEND_INTERVAL = 100;
     const CANVAS_WIDTH = 320;
     const CANVAS_HEIGHT = 240;
 
-    // Глобальные функции
-    window.log = (msg, type = 'info', className = '') => {
+    // Оптимизация окружения для мобильных
+    env.backends.onnx.wasm.numThreads = 1;
+    env.allowLocalModels = false;
+
+    // Делаем функции глобальными для onclick-обработчиков
+    window.log = (msg, type = 'info') => {
       const time = new Date().toLocaleTimeString();
-      const cls = type === 'err' ? 'log-err' : type === 'warn' ? 'log-warn' : type === 'detect' ? 'log-detect' : 'log-ok';
+      const cls = type === 'err' ? 'log-err' : type === 'warn' ? 'log-warn' : 'log-ok';
       const div = document.createElement('div');
-      div.className = `log-item ${cls} ${className}`;
-      div.textContent = `[${time}] ${msg}`;
-      const logEl = document.getElementById('log');
-      logEl.insertBefore(div, logEl.firstChild);
-      while (logEl.children.length > 30) logEl.removeChild(logEl.lastChild);
+      div.className = `log-item ${cls}`; div.textContent = `[${time}] ${msg}`;
+      document.getElementById('log').insertBefore(div, document.getElementById('log').firstChild);
+      while (document.getElementById('log').children.length > 20) document.getElementById('log').removeChild(document.getElementById('log').lastChild);
     };
     window.updateStatus = (msg) => { document.getElementById('statusBar').textContent = msg; };
     window.toggleConfig = () => { document.getElementById('configPanel').classList.toggle('open'); };
@@ -126,7 +123,7 @@
     document.getElementById('thresholdSlider').addEventListener('input', e => { 
       CONF_THRESHOLD = parseInt(e.target.value)/100; 
       document.getElementById('thresholdValue').textContent = e.target.value+'%'; 
-      window.log(`🎯 Порог: ${e.target.value}%`, 'info'); 
+      window.log(`🎯 Порог: ${e.target.value}%`); 
     });
 
     document.addEventListener('visibilitychange', () => {
@@ -162,7 +159,7 @@
         document.getElementById('resLabel').textContent = `${CANVAS_WIDTH}×${CANVAS_HEIGHT}`;
         document.getElementById('resLabel').classList.remove('hidden');
         
-        window.log('✅ Камера активна', 'ok'); window.updateStatus('🔌 MQTT...');
+        window.log('✅ Камера OK', 'ok'); window.updateStatus('🔌 MQTT...');
 
         const host = document.getElementById('mqttHost').value.trim();
         const port = parseInt(document.getElementById('mqttPort').value) || 8884;
@@ -179,12 +176,12 @@
           useSSL: location.protocol === 'https:', mqttVersion: 4,
           onSuccess: () => { 
             window.log('✅ MQTT подключен', 'ok'); 
-            window.updateStatus('⏳ Загрузка AI модели...'); 
+            window.updateStatus('⏳ Загрузка YOLOv8n (~6MB)...'); 
             mqtt.subscribe(topic); 
             loadAI(); 
           },
           onFailure: (res) => { 
-            window.log(`❌ MQTT: ${res.errorMessage}`, 'err'); 
+            window.log(`❌ MQTT: ${res.errorMessage} (code: ${res.errorCode})`, 'err'); 
             window.updateStatus('❌ MQTT Failed'); 
             setTimeout(() => { if (!mqtt.isConnected()) mqtt.connect(connectOptions); }, 3000); 
           }
@@ -192,51 +189,47 @@
         if (user) { connectOptions.userName = user; connectOptions.password = pass; }
 
         mqtt.onConnectionLost = (res) => {
-          window.log(`🔴 MQTT отключен: ${res.errorMessage}`, 'err');
-          window.updateStatus(`🔴 Lost`);
+          window.log(`🔴 MQTT отключен: ${res.errorMessage} (code: ${res.errorCode})`, 'err');
+          window.updateStatus(`🔴 Lost: ${res.errorMessage}`);
           if ([0, 1, 3, 6, 7].includes(res.errorCode)) setTimeout(() => { if (!mqtt.isConnected()) mqtt.connect(connectOptions); }, 3000);
         };
         
         mqtt.connect(connectOptions);
         toggleConfig();
       } catch (e) { 
-        window.log(`❌ Ошибка: ${e.message}`, 'err'); window.updateStatus(`❌ ${e.message}`); 
+        window.log(`❌ ${e.message}`, 'err'); window.updateStatus(`❌ ${e.message}`); 
         document.getElementById('btnStart').classList.remove('hidden'); document.getElementById('btnStop').classList.add('hidden'); 
       }
     };
 
-    // ================= ЗАГРУЗКА МОДЕЛИ (COCO-SSD) =================
+    // ================= ЗАГРУЗКА НОВОЙ МОДЕЛИ =================
     async function loadAI() {
       try {
-        window.log('📥 Загрузка COCO-SSD (lite_mobilenet_v2)...', 'info');
-        // cocoSsd.load() автоматически использует unpkg через глобальную переменную
-        detector = await cocoSsd.load({ 
-          base: 'lite_mobilenet_v2',
-          modelUrl: 'https://unpkg.com/@tensorflow-models/coco-ssd@2.2.3/model/lite_mobilenet_v2/'
+        // Пробуем WebGPU (быстро), если нет — падаем на WASM (медленнее, но работает везде)
+        let device = 'wasm';
+        try {
+          if (navigator.gpu) {
+            await navigator.gpu.requestAdapter();
+            device = 'webgpu';
+            window.log('🚀 Используем WebGPU (аппаратное ускорение)', 'ok');
+          }
+        } catch(e) { window.log('⚠️ WebGPU недоступен, используем WASM', 'warn'); }
+
+        detector = await pipeline('object-detection', 'Xenova/yolov8n', { 
+          device: device,
+          progress_callback: (progress) => {
+            if (progress.status === 'download' && progress.file) {
+              const pct = progress.progress ? Math.round(progress.progress * 100) : '?';
+              window.updateStatus(`📥 ${progress.file}: ${pct}%`);
+            }
+          }
         });
-        window.log('✅ AI модель загружена!', 'ok');
+        
+        window.log('✅ YOLOv8n загружен!', 'ok'); 
         window.updateStatus('🟢 ТРЕКИНГ АКТИВЕН');
         tracking = true; lastFpsTime = performance.now(); loop();
-      } catch (e) {
-        window.log(`❌ Ошибка AI: ${e.message}`, 'err');
-        window.updateStatus('❌ AI Failed');
-        window.log('💡 Попробуйте: 1) Обновить страницу 2) Проверить интернет 3) Использовать другой браузер', 'warn');
-      }
-    }
-
-    // ================= ЛОГИРОВАНИЕ ОБЪЕКТОВ =================
-    function logDetectedObject(label, score, ex, ey) {
-      const now = Date.now();
-      const objKey = `${label}_${Math.round(score*100)}`;
-      
-      if (objKey !== lastLoggedObject || (now - lastLogTime) >= LOG_COOLDOWN) {
-        const direction = [];
-        if (Math.abs(ex) > 15) direction.push(ex > 0 ? '→' : '←');
-        if (Math.abs(ey) > 15) direction.push(ey > 0 ? '↓' : '↑');
-        const dirStr = direction.length ? ` [${direction.join('')}]` : ' [● центр]';
-        window.log(`🔍 ${label.toUpperCase()} ${Math.round(score*100)}%${dirStr} dx:${Math.round(ex)} dy:${Math.round(ey)}`, 'detect', 'log-detect');
-        lastLoggedObject = objKey;
-        lastLogTime = now;
+      } catch (e) { 
+        window.log(`❌ AI: ${e.message}`, 'err'); window.updateStatus('❌ AI Failed'); 
       }
     }
 
@@ -252,50 +245,44 @@
       ctx.drawImage(vid, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
       
       try {
-        const preds = await detector.detect(canvas);
-        const valid = preds.filter(p => p.score >= CONF_THRESHOLD);
-        document.getElementById('objCount').textContent = valid.length;
+        // 🔽 YOLOv8n inference (возвращает массив объектов с {label, score, box:{xmin,ymin,xmax,ymax}})
+        const results = await detector(canvas, { threshold: CONF_THRESHOLD });
         
-        if (valid.length === 0) { 
-          drawCrosshair('#f00'); 
-          if (lastLoggedObject && (now - lastLogTime) >= 3000) {
-            window.log('🔻 Объект потерян', 'warn');
-            lastLoggedObject = null;
-          }
-          return; 
-        }
+        if (!results || results.length === 0) { drawCrosshair('#f00'); return; }
         
-        const obj = valid[0];
-        const [x, y, w, h] = obj.bbox;
+        // Берём самый вероятный объект
+        const obj = results[0];
+        const x = obj.box.xmin;
+        const y = obj.box.ymin;
+        const w = obj.box.xmax - x;
+        const h = obj.box.ymax - y;
+        
         let cx = x + w/2, cy = y + h/2;
-        if (isMirrored) cx = CANVAS_WIDTH - cx;
+        if (isMirrored) cx = CANVAS_WIDTH - cx; // Компенсация зеркала для координат
         
         const ex = cx - CANVAS_WIDTH/2, ey = cy - CANVAS_HEIGHT/2;
-        
-        logDetectedObject(obj.class, obj.score, ex, ey);
+        document.getElementById('objCount').textContent = results.length;
         
         // Отрисовка
         ctx.strokeStyle = '#0f0'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
         ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI*2); ctx.fillStyle = '#0f0'; ctx.fill();
         drawCrosshair('#0f0');
         ctx.fillStyle = '#0f0'; ctx.font = 'bold 11px monospace';
-        ctx.fillText(`${obj.class} ${Math.round(obj.score*100)}%`, x, y-8);
+        ctx.fillText(`${obj.label} ${Math.round(obj.score*100)}%`, x, y-8);
         
         // Отправка на M5Stack
         if (now - lastSend >= SEND_INTERVAL && mqtt?.isConnected()) {
           const payload = JSON.stringify({ 
-            ex: Math.round(ex), ey: Math.round(ey), 
+            ex: Math.round(ex), 
+            ey: Math.round(ey), 
             conf: parseFloat(obj.score.toFixed(3)), 
-            class: obj.class 
+            class: obj.label // 🔽 Ключ "class" для совместимости с вашим main.cpp
           });
           const msg = new Paho.MQTT.Message(payload);
           msg.destinationName = document.getElementById('mqttTopic').value.trim() || 'servo/control';
           mqtt.send(msg); sentCount++; document.getElementById('sentCount').textContent = sentCount; lastSend = now;
         }
-      } catch (e) { 
-        console.error('Detection error:', e); 
-        window.log(`⚠️ Ошибка инференса: ${e.message}`, 'warn');
-      }
+      } catch (e) { console.error('Detection error:', e); }
     }
 
     function drawCrosshair(color) {
@@ -319,7 +306,7 @@
     };
 
     window.onerror = (msg, url, line) => { window.log(`💥 ${msg} (L${line})`, 'err'); return false; };
-    console.log('🎯 Pan-Tilt AI Tracker Ready');
+    console.log('🎯 Pan-Tilt AI Tracker v2 (YOLOv8n) Ready');
   </script>
 </body>
 </html>
