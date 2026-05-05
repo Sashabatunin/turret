@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Automatic Turret – Real-Time Object Detection & Tracking</title>
+    <title>Automatic Turret – YOLOv8 Real-Time Detection & Tracking</title>
 
-    <!-- TensorFlow.js and COCO-SSD model -->
+    <!-- TensorFlow.js -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js">
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js">
+    <!-- YOLOv8-tfjs library (loads model + utils) -->
+    <script src="https://cdn.jsdelivr.net/npm/@hyuto/yolov8-tfjs@1.0.1/dist/yolov8.min.js">
     </script>
 
     <style>
@@ -56,14 +57,6 @@
             gap: 20px;
         }
 
-        /* Header */
-        .header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 12px;
-        }
         .header h1 {
             font-size: 1.5rem;
             font-weight: 700;
@@ -75,7 +68,6 @@
             margin: 0;
         }
 
-        /* Main card */
         .main-card {
             background: var(--surface);
             border-radius: var(--radius);
@@ -85,7 +77,6 @@
             position: relative;
         }
 
-        /* Video container */
         .video-container {
             position: relative;
             width: 100%;
@@ -95,9 +86,11 @@
             overflow: hidden;
             border-radius: var(--radius) var(--radius) 0 0;
         }
+
         #video {
-            display: none; /* hidden, we paint it onto the canvas */
+            display: none;
         }
+
         #output-canvas {
             position: absolute;
             top: 0;
@@ -108,6 +101,7 @@
             pointer-events: none;
             z-index: 2;
         }
+
         #placeholder {
             position: absolute;
             inset: 0;
@@ -121,26 +115,12 @@
             font-size: 1rem;
             transition: opacity var(--transition);
         }
-        #placeholder .cam-text {
-            font-size: 1.2rem;
-            font-weight: 500;
-            letter-spacing: 0.5px;
-            opacity: 0.8;
-        }
+
         #placeholder.active {
             opacity: 0;
             pointer-events: none;
         }
-        .video-feed {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            z-index: 1;
-        }
 
-        /* Status indicator */
         .status-dot {
             position: absolute;
             top: 14px;
@@ -158,21 +138,22 @@
             font-weight: 600;
             letter-spacing: 0.3px;
             border: 1px solid rgba(255, 255, 255, 0.15);
-            transition: all var(--transition);
         }
+
         .status-dot .dot {
             width: 10px;
             height: 10px;
             border-radius: 50%;
             background: #ff4444;
             transition: background var(--transition);
-            box-shadow: 0 0 8px rgba(255, 68, 68, 0.6);
         }
+
         .status-dot .dot.active {
             background: #00e676;
             box-shadow: 0 0 12px rgba(0, 230, 118, 0.7);
             animation: glow-dot 1.8s ease-in-out infinite;
         }
+
         @keyframes glow-dot {
             0%,
             100% {
@@ -182,6 +163,7 @@
                 box-shadow: 0 0 22px rgba(0, 230, 118, 0.9);
             }
         }
+
         .fps-counter {
             position: absolute;
             top: 14px;
@@ -194,14 +176,11 @@
             border-radius: 20px;
             font-size: 0.8rem;
             font-weight: 700;
-            letter-spacing: 0.5px;
             border: 1px solid rgba(255, 255, 255, 0.15);
             color: var(--accent);
-            font-variant-numeric: tabular-nums;
             font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
         }
 
-        /* Controls bar */
         .controls-bar {
             display: flex;
             align-items: center;
@@ -212,6 +191,7 @@
             border-top: 1px solid var(--border);
             border-radius: 0 0 var(--radius) var(--radius);
         }
+
         .btn {
             padding: 10px 18px;
             border-radius: 25px;
@@ -229,16 +209,14 @@
             gap: 6px;
             font-family: inherit;
         }
+
         .btn:hover {
             background: #252535;
             border-color: #4a4a5a;
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         }
-        .btn:active {
-            transform: scale(0.96);
-            transition: 0.08s;
-        }
+
         .btn.primary {
             background: linear-gradient(135deg, #00c8e0, #0080ff);
             border: none;
@@ -246,27 +224,25 @@
             font-weight: 700;
             box-shadow: 0 4px 18px rgba(0, 150, 220, 0.35);
         }
+
         .btn.primary:hover {
             box-shadow: 0 6px 24px rgba(0, 160, 230, 0.5);
             background: linear-gradient(135deg, #00d8f0, #1090ff);
         }
+
         .btn.primary.stop {
             background: linear-gradient(135deg, #ff4060, #d02040);
             box-shadow: 0 4px 18px rgba(255, 64, 96, 0.35);
         }
+
         .btn.primary.stop:hover {
             box-shadow: 0 6px 24px rgba(255, 64, 96, 0.5);
-            background: linear-gradient(135deg, #ff5070, #e03050);
         }
-        .btn.small {
-            padding: 7px 13px;
-            font-size: 0.75rem;
-            border-radius: 20px;
-        }
+
         .spacer {
             flex: 1;
-            min-width: 10px;
         }
+
         .confidence-slider {
             display: flex;
             align-items: center;
@@ -275,13 +251,12 @@
             color: var(--text2);
             white-space: nowrap;
         }
+
         .confidence-slider input[type="range"] {
             width: 80px;
             accent-color: var(--accent);
-            cursor: pointer;
         }
 
-        /* Detections panel */
         .detections-panel {
             background: var(--surface);
             border-radius: var(--radius);
@@ -291,6 +266,7 @@
             max-height: 220px;
             overflow-y: auto;
         }
+
         .detections-panel h3 {
             font-size: 0.85rem;
             text-transform: uppercase;
@@ -301,15 +277,16 @@
             align-items: center;
             gap: 8px;
         }
-        .detections-panel h3 .count-badge {
+
+        .count-badge {
             background: var(--accent);
             color: #000;
             font-weight: 700;
             padding: 2px 9px;
             border-radius: 12px;
             font-size: 0.7rem;
-            letter-spacing: 0;
         }
+
         .detection-item {
             display: flex;
             align-items: center;
@@ -317,38 +294,40 @@
             padding: 8px 0;
             border-bottom: 1px solid rgba(255, 255, 255, 0.04);
             font-size: 0.82rem;
-            transition: background var(--transition);
         }
+
         .detection-item:last-child {
             border-bottom: none;
         }
-        .detection-item .color-swatch {
+
+        .color-swatch {
             width: 12px;
             height: 12px;
             border-radius: 3px;
             flex-shrink: 0;
         }
-        .detection-item .label-name {
+
+        .label-name {
             font-weight: 600;
             flex: 1;
-            min-width: 80px;
         }
-        .detection-item .confidence {
+
+        .confidence {
             font-weight: 700;
             color: var(--accent);
-            font-variant-numeric: tabular-nums;
             font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
             font-size: 0.78rem;
         }
-        .detection-item .track-id {
+
+        .track-id {
             background: var(--surface2);
             padding: 3px 8px;
             border-radius: 10px;
             font-size: 0.7rem;
             font-weight: 700;
-            letter-spacing: 0.5px;
             color: #ffb74d;
         }
+
         .no-detections {
             color: var(--text2);
             font-style: italic;
@@ -357,7 +336,6 @@
             padding: 20px 0;
         }
 
-        /* Scrollbar */
         ::-webkit-scrollbar {
             width: 5px;
         }
@@ -369,7 +347,6 @@
             border-radius: 10px;
         }
 
-        /* Responsive */
         @media (max-width: 700px) {
             .header h1 {
                 font-size: 1.2rem;
@@ -378,78 +355,46 @@
                 aspect-ratio: 4/3;
                 max-height: 50vh;
             }
-            .btn {
-                padding: 8px 13px;
-                font-size: 0.75rem;
-            }
-            .controls-bar {
-                gap: 6px;
-                padding: 10px 12px;
-            }
-            .confidence-slider {
-                font-size: 0.7rem;
-            }
-            .confidence-slider input[type="range"] {
-                width: 55px;
-            }
         }
     </style>
 </head>
 <body>
 
     <div class="app-container">
-        <!-- Header -->
         <div class="header">
             <h1>Automatic Turret</h1>
         </div>
 
-        <!-- Main card -->
         <div class="main-card">
             <div class="video-container" id="videoContainer">
-                <!-- Hidden video element -->
                 <video id="video" autoplay playsinline muted></video>
-                <!-- Canvas overlay for drawing detections -->
                 <canvas id="output-canvas"></canvas>
-                <!-- Placeholder when camera is off -->
                 <div id="placeholder">
-                    <span class="cam-text">Camera is offline</span>
+                    <span>Camera is offline</span>
                     <span style="font-size:0.75rem;opacity:0.6;">Press <strong>Start Camera</strong> to begin</span>
                 </div>
-                <!-- Status dot -->
                 <div class="status-dot" id="statusDot">
                     <span class="dot" id="statusDotInner"></span>
                     <span id="statusText">Idle</span>
                 </div>
-                <!-- FPS -->
                 <div class="fps-counter" id="fpsCounter">FPS: --</div>
             </div>
 
-            <!-- Controls -->
             <div class="controls-bar">
-                <button class="btn primary" id="btnStart" title="Start camera and detection">
-                    ▶ Start
-                </button>
-                <button class="btn primary stop" id="btnStop" title="Stop camera and detection" disabled>
-                    ⏹ Stop
-                </button>
+                <button class="btn primary" id="btnStart">▶ Start</button>
+                <button class="btn primary stop" id="btnStop" disabled>⏹ Stop</button>
                 <span class="spacer"></span>
                 <div class="confidence-slider">
                     <span>Min Confidence:</span>
-                    <input type="range" id="confidenceSlider" min="10" max="90" value="40" step="5">
-                    <span id="confidenceValue" style="font-weight:700;color:var(--accent);min-width:28px;">40%</span>
+                    <input type="range" id="confidenceSlider" min="10" max="90" value="30" step="5">
+                    <span id="confidenceValue" style="font-weight:700;color:var(--accent);">30%</span>
                 </div>
-                <button class="btn small" id="btnToggleTracking" title="Toggle object tracking across frames">
-                    🔗 Tracking: <strong>ON</strong>
-                </button>
+                <button class="btn small" id="btnToggleTracking">🔗 Tracking: <strong>ON</strong></button>
             </div>
         </div>
 
-        <!-- Detections list -->
         <div class="detections-panel" id="detectionsPanel">
-            <h3>
-                Detected Objects
-                <span class="count-badge" id="countBadge">0</span>
-            </h3>
+            <h3>Detected Objects <span class="count-badge" id="countBadge">0</span></h3>
             <div id="detectionsList">
                 <p class="no-detections">No objects detected yet. Start the camera to begin.</p>
             </div>
@@ -485,26 +430,22 @@
             let isRunning = false;
             let animationFrameId = null;
             let trackingEnabled = true;
-            let minConfidence = 0.40;
-            let trackedObjects = []; // { id, class, bbox, lastSeen, color }
+            let minConfidence = 0.30;
+            let trackedObjects = [];
             let nextTrackId = 1;
             const TRACKING_IOU_THRESHOLD = 0.3;
-            const TRACKING_MAX_AGE = 15; // frames before forgetting a tracked object
+            const TRACKING_MAX_AGE = 15;
 
-            // FPS calculation
             let fpsTimes = [];
             let currentFPS = 0;
 
-            // ─────────────────────────────────────
-            // COLOR PALETTE FOR CLASSES
-            // ─────────────────────────────────────
+            // Color palette
             const classColorMap = {};
             const palette = [
                 '#00e5ff', '#ff4081', '#ffeb3b', '#69f0ae', '#ff6e40',
                 '#b388ff', '#40c4ff', '#ff80ab', '#b2ff59', '#ffd740',
                 '#7c4dff', '#18ffff', '#f50057', '#00e676', '#ff9100',
                 '#e040fb', '#00b0ff', '#ff3d00', '#64ffda', '#c6ff00',
-                '#d500f9', '#2979ff', '#ff1744', '#1de9b6', '#ffc400',
             ];
 
             function getColorForClass(className) {
@@ -516,7 +457,7 @@
             }
 
             // ─────────────────────────────────────
-            // IOU CALCULATION
+            // IOU COMPUTATION (bbox format: [x, y, w, h])
             // ─────────────────────────────────────
             function computeIOU(boxA, boxB) {
                 const xA = Math.max(boxA[0], boxB[0]);
@@ -531,13 +472,12 @@
             }
 
             // ─────────────────────────────────────
-            // UPDATE TRACKED OBJECTS
+            // TRACKING LOGIC
             // ─────────────────────────────────────
             function updateTracking(detections, frameTimestamp) {
                 const newTracked = [];
                 const matchedDetectionIndices = new Set();
 
-                // Try to match existing tracked objects to new detections
                 for (const tracked of trackedObjects) {
                     let bestIOU = 0;
                     let bestIdx = -1;
@@ -551,7 +491,6 @@
                         }
                     }
                     if (bestIdx >= 0) {
-                        // Match found: update tracked object
                         matchedDetectionIndices.add(bestIdx);
                         newTracked.push({
                             id: tracked.id,
@@ -562,16 +501,10 @@
                             color: tracked.color,
                         });
                     } else if (frameTimestamp - tracked.lastSeen < TRACKING_MAX_AGE) {
-                        // Keep for a while (carry forward with old bbox)
-                        newTracked.push({
-                            ...tracked,
-                            score: tracked.score * 0.9, // decay confidence
-                        });
+                        newTracked.push({ ...tracked, score: tracked.score * 0.9 });
                     }
-                    // Otherwise: dropped
                 }
 
-                // Add unmatched detections as new tracked objects
                 for (let i = 0; i < detections.length; i++) {
                     if (!matchedDetectionIndices.has(i)) {
                         const det = detections[i];
@@ -591,26 +524,22 @@
             }
 
             // ─────────────────────────────────────
-            // DRAW DETECTIONS (on top of existing video frame on canvas)
+            // DRAW OVERLAYS
             // ─────────────────────────────────────
-            function drawDetections(detectionsToDraw, videoWidth, videoHeight, canvasWidth, canvasHeight) {
-                // No clearRect – we keep the video frame that was already drawn
+            function drawDetections(objects, videoWidth, videoHeight, canvasWidth, canvasHeight) {
                 const scaleX = canvasWidth / videoWidth;
                 const scaleY = canvasHeight / videoHeight;
 
-                for (const obj of detectionsToDraw) {
+                for (const obj of objects) {
                     const [x, y, w, h] = obj.bbox;
                     const sx = x * scaleX;
                     const sy = y * scaleY;
                     const sw = w * scaleX;
                     const sh = h * scaleY;
                     const color = obj.color || getColorForClass(obj.class);
-                    const label = trackingEnabled ?
-                        `${obj.class} #${obj.id}` :
-                        obj.class;
-                    const confidenceStr = obj.score ? ` ${Math.round(obj.score * 100)}%` : '';
+                    const label = trackingEnabled ? `${obj.class} #${obj.id}` : obj.class;
+                    const confStr = obj.score ? ` ${Math.round(obj.score * 100)}%` : '';
 
-                    // Draw bounding box
                     ctx.strokeStyle = color;
                     ctx.lineWidth = Math.max(2, Math.min(sw, sh) * 0.04);
                     ctx.shadowColor = color;
@@ -620,40 +549,35 @@
                     ctx.stroke();
                     ctx.shadowBlur = 0;
 
-                    // Draw corner accents
+                    // Corner accents
                     const cornerLen = Math.min(sw, sh) * 0.2;
-                    ctx.strokeStyle = color;
                     ctx.lineWidth = Math.max(3, ctx.lineWidth + 1);
-                    // Top-left
                     ctx.beginPath();
                     ctx.moveTo(sx, sy + cornerLen);
                     ctx.lineTo(sx, sy);
                     ctx.lineTo(sx + cornerLen, sy);
                     ctx.stroke();
-                    // Top-right
                     ctx.beginPath();
                     ctx.moveTo(sx + sw - cornerLen, sy);
                     ctx.lineTo(sx + sw, sy);
                     ctx.lineTo(sx + sw, sy + cornerLen);
                     ctx.stroke();
-                    // Bottom-left
                     ctx.beginPath();
                     ctx.moveTo(sx, sy + sh - cornerLen);
                     ctx.lineTo(sx, sy + sh);
                     ctx.lineTo(sx + cornerLen, sy + sh);
                     ctx.stroke();
-                    // Bottom-right
                     ctx.beginPath();
                     ctx.moveTo(sx + sw - cornerLen, sy + sh);
                     ctx.lineTo(sx + sw, sy + sh);
                     ctx.lineTo(sx + sw, sy + sh - cornerLen);
                     ctx.stroke();
 
-                    // Draw label background
+                    // Label
                     const fontSize = Math.max(11, Math.min(sw * 0.12, 16));
                     ctx.font = `bold ${fontSize}px 'Segoe UI', 'Inter', sans-serif`;
-                    const textMetrics = ctx.measureText(label + confidenceStr);
-                    const textWidth = textMetrics.width;
+                    const text = label + confStr;
+                    const textWidth = ctx.measureText(text).width;
                     const textHeight = fontSize;
                     const paddingX = 6;
                     const paddingY = 3;
@@ -665,32 +589,25 @@
                     ctx.roundRect(labelX, labelY, textWidth + paddingX * 2, textHeight + paddingY * 2, 5);
                     ctx.fill();
 
-                    // Draw left color bar
                     ctx.fillStyle = color;
                     ctx.fillRect(labelX, labelY, 4, textHeight + paddingY * 2);
 
-                    // Draw text
-                    ctx.fillStyle = '#ffffff';
-                    ctx.textBaseline = 'top';
-                    ctx.fillText(label + confidenceStr, labelX + paddingX + 4, labelY + paddingY);
+                    ctx.fillStyle = '#fff';
+                    ctx.fillText(text, labelX + paddingX + 4, labelY + paddingY);
                 }
             }
 
             // ─────────────────────────────────────
-            // UPDATE DETECTIONS LIST UI
+            // UI LIST UPDATE
             // ─────────────────────────────────────
-            function updateDetectionsList(detectionsToShow) {
-                if (detectionsToShow.length === 0) {
-                    detectionsList.innerHTML =
-                        '<p class="no-detections">No objects detected in this frame.</p>';
+            function updateDetectionsList(objects) {
+                if (!objects.length) {
+                    detectionsList.innerHTML = '<p class="no-detections">No objects detected in this frame.</p>';
                     countBadge.textContent = '0';
                     return;
                 }
-
-                // Sort by confidence descending
-                const sorted = [...detectionsToShow].sort((a, b) => (b.score || 0) - (a.score || 0));
+                const sorted = [...objects].sort((a, b) => (b.score || 0) - (a.score || 0));
                 countBadge.textContent = sorted.length;
-
                 detectionsList.innerHTML = sorted.map(obj => {
                     const color = obj.color || getColorForClass(obj.class);
                     const label = trackingEnabled ?
@@ -698,17 +615,17 @@
                         obj.class;
                     const conf = obj.score ? `${Math.round(obj.score * 100)}%` : '--';
                     return `
-                            <div class="detection-item">
-                                <span class="color-swatch" style="background:${color};box-shadow:0 0 6px ${color};"></span>
-                                <span class="label-name">${label}</span>
-                                <span class="confidence">${conf}</span>
-                            </div>
-                        `;
+                        <div class="detection-item">
+                            <span class="color-swatch" style="background:${color};box-shadow:0 0 6px ${color};"></span>
+                            <span class="label-name">${label}</span>
+                            <span class="confidence">${conf}</span>
+                        </div>
+                    `;
                 }).join('');
             }
 
             // ─────────────────────────────────────
-            // DETECTION LOOP
+            // DETECTION LOOP (YOLOv8)
             // ─────────────────────────────────────
             let frameCount = 0;
             let lastListUpdate = 0;
@@ -718,15 +635,12 @@
 
                 // FPS
                 fpsTimes.push(timestamp);
-                while (fpsTimes.length > 0 && fpsTimes[0] < timestamp - 1000) {
-                    fpsTimes.shift();
-                }
+                while (fpsTimes.length > 0 && fpsTimes[0] < timestamp - 1000) fpsTimes.shift();
                 currentFPS = fpsTimes.length;
                 if (frameCount % 6 === 0) {
                     fpsCounter.textContent = `FPS: ${currentFPS}`;
                 }
 
-                // Match canvas size to video container
                 const containerWidth = videoContainer.clientWidth;
                 const containerHeight = videoContainer.clientHeight;
                 if (canvas.width !== containerWidth || canvas.height !== containerHeight) {
@@ -738,33 +652,38 @@
                 const videoHeight = video.videoHeight;
 
                 if (videoWidth > 0 && videoHeight > 0) {
-                    // 1. Draw the current video frame onto the canvas (this is the key fix!)
+                    // Draw video frame
                     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                    // 2. Run detection
-                    let rawDetections;
+                    // Run YOLOv8 detection
+                    let predictions = [];
                     try {
-                        rawDetections = await model.detect(video);
+                        // model.detect returns an array of objects: { class: 'person', score: 0.9, bbox: [x1, y1, x2, y2] }
+                        // bbox is in pixels (absolute coordinates) already scaled to video dimensions.
+                        predictions = await model.detect(video);
                     } catch (e) {
                         console.warn('Detection error:', e);
-                        rawDetections = [];
                     }
 
-                    // Filter by confidence
-                    const filtered = rawDetections.filter(d => d.score >= minConfidence);
+                    // Filter by confidence and convert bbox format: [x1, y1, x2, y2] -> [x, y, w, h]
+                    const detections = predictions
+                        .filter(p => p.score >= minConfidence)
+                        .map(p => ({
+                            class: p.class,
+                            score: p.score,
+                            bbox: [
+                                p.bbox[0],
+                                p.bbox[1],
+                                p.bbox[2] - p.bbox[0],
+                                p.bbox[3] - p.bbox[1]
+                            ]
+                        }));
 
-                    // Build detection objects with bbox in video coordinates
-                    const detectionsForTracking = filtered.map(d => ({
-                        class: d.class,
-                        bbox: d.bbox, // [x, y, width, height]
-                        score: d.score,
-                    }));
-
-                    let detectionsToDraw;
+                    let objectsToDraw;
                     if (trackingEnabled) {
-                        detectionsToDraw = updateTracking(detectionsForTracking, frameCount);
+                        objectsToDraw = updateTracking(detections, frameCount);
                     } else {
-                        detectionsToDraw = detectionsForTracking.map(d => ({
+                        objectsToDraw = detections.map(d => ({
                             ...d,
                             id: null,
                             color: getColorForClass(d.class),
@@ -772,13 +691,11 @@
                         }));
                     }
 
-                    // 3. Draw detection overlays on top of the video frame
-                    drawDetections(detectionsToDraw, videoWidth, videoHeight, canvas.width, canvas.height);
+                    drawDetections(objectsToDraw, videoWidth, videoHeight, canvas.width, canvas.height);
 
-                    // Update list periodically
-                    if (frameCount - lastListUpdate > 4 || detectionsToDraw.length !== parseInt(countBadge
-                            .textContent || '0')) {
-                        updateDetectionsList(detectionsToDraw);
+                    if (frameCount - lastListUpdate > 4 || objectsToDraw.length !== parseInt(countBadge.textContent ||
+                            '0')) {
+                        updateDetectionsList(objectsToDraw);
                         lastListUpdate = frameCount;
                     }
                 }
@@ -788,7 +705,7 @@
             }
 
             // ─────────────────────────────────────
-            // START CAMERA + MODEL
+            // START CAMERA & LOAD YOLO MODEL
             // ─────────────────────────────────────
             async function startCamera() {
                 if (isRunning) return;
@@ -796,54 +713,43 @@
                 // Request camera
                 try {
                     stream = await navigator.mediaDevices.getUserMedia({
-                        video: {
-                            width: { ideal: 1280 },
-                            height: { ideal: 720 },
-                            facingMode: 'environment',
-                        },
+                        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'environment' },
                         audio: false,
                     });
                 } catch (err) {
-                    alert(
-                        '⚠️ Could not access the camera. Please allow camera permissions and ensure a camera is connected.');
-                    console.error('Camera error:', err);
+                    alert('⚠️ Could not access the camera. Please allow camera permissions.');
                     return;
                 }
 
                 video.srcObject = stream;
                 await video.play();
 
-                // Wait for video to have dimensions
                 if (video.videoWidth === 0) {
-                    await new Promise((resolve) => {
-                        video.addEventListener('loadedmetadata', resolve, { once: true });
-                    });
+                    await new Promise(resolve => video.addEventListener('loadedmetadata', resolve, { once: true }));
                 }
 
-                // Load model if not loaded
+                // Load YOLOv8 model if not yet loaded
                 if (!model) {
-                    statusText.textContent = 'Loading AI model...';
+                    statusText.textContent = 'Loading YOLOv8...';
                     statusDotInner.classList.remove('active');
                     btnStart.disabled = true;
-                    btnStart.textContent = '⏳ Loading model...';
+                    btnStart.textContent = '⏳ Loading YOLOv8...';
 
                     try {
-                        model = await cocoSsd.load({
-                            base: 'lite_mobilenet_v2',
-                        });
+                        // This loads the pre-trained YOLOv8n model (nano)
+                        model = await yolo.load('yolov8n');
                     } catch (err) {
-                        alert(
-                            '⚠️ Failed to load the AI detection model. Please check your internet connection and try again.');
-                        console.error('Model load error:', err);
+                        alert('⚠️ Failed to load the YOLO model. Check your internet connection and try again.');
+                        console.error(err);
                         stopCamera();
                         return;
                     }
                 }
 
-                // Update UI
+                // Activate UI
                 placeholder.classList.add('active');
                 statusDotInner.classList.add('active');
-                statusText.textContent = 'Live • Detecting';
+                statusText.textContent = 'Live (YOLOv8)';
                 btnStart.disabled = true;
                 btnStart.textContent = '▶ Running';
                 btnStop.disabled = false;
@@ -856,7 +762,6 @@
                 updateDetectionsList([]);
                 fpsCounter.textContent = 'FPS: --';
 
-                // Start detection loop
                 animationFrameId = requestAnimationFrame(detectionLoop);
             }
 
@@ -865,24 +770,18 @@
             // ─────────────────────────────────────
             function stopCamera() {
                 isRunning = false;
-
                 if (animationFrameId) {
                     cancelAnimationFrame(animationFrameId);
                     animationFrameId = null;
                 }
-
                 if (stream) {
                     stream.getTracks().forEach(track => track.stop());
                     stream = null;
                 }
                 video.srcObject = null;
-
-                // Clear canvas and reset size
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 canvas.width = 0;
                 canvas.height = 0;
-
-                // Reset UI
                 placeholder.classList.remove('active');
                 statusDotInner.classList.remove('active');
                 statusText.textContent = 'Idle';
@@ -894,7 +793,7 @@
                 updateDetectionsList([]);
                 countBadge.textContent = '0';
                 detectionsList.innerHTML =
-                    '<p class="no-detections">Camera stopped. Press <strong>Start</strong> to resume detection.</p>';
+                    '<p class="no-detections">Camera stopped. Press <strong>Start</strong> to resume.</p>';
             }
 
             // ─────────────────────────────────────
@@ -920,35 +819,22 @@
                 confidenceValue.textContent = Math.round(minConfidence * 100) + '%';
             });
 
-            // Handle window resize for canvas
             window.addEventListener('resize', () => {
                 if (isRunning && video.videoWidth > 0) {
-                    const containerWidth = videoContainer.clientWidth;
-                    const containerHeight = videoContainer.clientHeight;
-                    canvas.width = containerWidth;
-                    canvas.height = containerHeight;
+                    canvas.width = videoContainer.clientWidth;
+                    canvas.height = videoContainer.clientHeight;
                 }
             });
 
-            // Stop camera when page unloads
             window.addEventListener('beforeunload', () => {
                 stopCamera();
             });
 
-            // ─────────────────────────────────────
-            // INITIAL SETUP
-            // ─────────────────────────────────────
+            // Init UI
             confidenceValue.textContent = Math.round(minConfidence * 100) + '%';
             confidenceSlider.value = Math.round(minConfidence * 100);
             btnStop.disabled = true;
-            btnStart.disabled = false;
             statusText.textContent = 'Idle';
-            fpsCounter.textContent = 'FPS: --';
-
-            console.log('🚀 Automatic Turret Ready');
-            console.log('   - COCO-SSD detection + IOU-based tracking');
-            console.log('   - Adjust confidence threshold with the slider');
-            console.log('   - Toggle tracking on/off with the button');
         })();
     </script>
 </body>
