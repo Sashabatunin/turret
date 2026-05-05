@@ -62,23 +62,17 @@
             cursor: pointer;
             transition: all 0.3s ease;
             font-weight: 600;
-        }
-
-        .btn-stop {
-            background: #ff1744;
             color: #fff;
         }
 
-        .btn-stop:hover {
-            background: #ff5252;
-            box-shadow: 0 0 20px rgba(255, 23, 68, 0.5);
-        }
+        button:hover { transform: translateY(-1px); }
+        button:active { transform: translateY(1px); }
 
-        button:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-            box-shadow: none;
-        }
+        .btn-start { background: #00c853; }
+        .btn-start:hover { background: #00e676; box-shadow: 0 0 20px rgba(0, 200, 83, 0.5); }
+
+        .btn-stop { background: #ff1744; }
+        .btn-stop:hover { background: #ff5252; box-shadow: 0 0 20px rgba(255, 23, 68, 0.5); }
 
         .status {
             margin-top: 15px;
@@ -89,15 +83,8 @@
             transition: all 0.3s;
         }
 
-        .status.active {
-            background: rgba(0, 200, 83, 0.3);
-            color: #69f0ae;
-        }
-
-        .status.inactive {
-            background: rgba(255, 23, 68, 0.3);
-            color: #ff8a80;
-        }
+        .status.active { background: rgba(0, 200, 83, 0.3); color: #69f0ae; }
+        .status.inactive { background: rgba(255, 23, 68, 0.3); color: #ff8a80; }
 
         .error-msg {
             margin-top: 15px;
@@ -109,10 +96,9 @@
             text-align: center;
         }
         
-        /* Заглушка, пока камера не включилась */
         .placeholder {
-            color: #888;
-            font-size: 1.2rem;
+            color: #666;
+            font-size: 1.1rem;
         }
     </style>
 </head>
@@ -126,7 +112,7 @@
     </div>
 
     <div class="controls">
-        <button class="btn-stop" id="btnStop" onclick="stopCamera()" disabled>⏹ Выключить камеру</button>
+        <button id="btnControl" class="btn-stop">⏹ Выключить камеру</button>
     </div>
 
     <div class="status inactive" id="status">Ожидание доступа...</div>
@@ -136,12 +122,12 @@
         let stream = null;
 
         const video      = document.getElementById('video');
-        const btnStop    = document.getElementById('btnStop');
+        const btn        = document.getElementById('btnControl');
         const status     = document.getElementById('status');
         const errorMsg   = document.getElementById('errorMsg');
         const placeholder = document.getElementById('placeholder');
 
-        // Автоматический запуск при загрузке страницы
+        // Автоматический запуск при открытии страницы
         window.addEventListener('DOMContentLoaded', startCamera);
 
         async function startCamera() {
@@ -150,39 +136,19 @@
 
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        width:  { ideal: 1280 },
-                        height: { ideal: 720  },
-                        facingMode: 'user'
-                    },
+                    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
                     audio: false
                 });
 
-                // Если доступ получен
                 video.srcObject = stream;
                 video.play();
 
                 video.style.display = 'block';
                 placeholder.style.display = 'none';
 
-                btnStop.disabled = false;
-                status.textContent = '🟢 Камера активна';
-                status.className   = 'status active';
-
+                updateUI(true);
             } catch (err) {
-                console.error('Ошибка:', err);
-                placeholder.textContent = 'Нет сигнала';
-                
-                // Обработка ошибок доступа
-                if (err.name === 'NotAllowedError') {
-                    errorMsg.textContent = '⚠ Вы запретили доступ к камере. Разрешите доступ в настройках браузера и обновите страницу.';
-                } else if (err.name === 'NotFoundError') {
-                    errorMsg.textContent = '⚠ Камера не найдена на устройстве.';
-                } else {
-                    errorMsg.textContent = `⚠ Ошибка: ${err.message}`;
-                }
-                errorMsg.style.display = 'block';
-                status.textContent = 'Камера выключена';
+                handleCameraError(err);
             }
         }
 
@@ -196,23 +162,53 @@
             video.style.display = 'none';
             placeholder.style.display = 'block';
             placeholder.textContent = 'Камера выключена';
-
-            btnStop.disabled = true;
-            status.textContent = 'Камера выключена';
-            status.className   = 'status inactive';
             
-            // Кнопка превращается в "Включить" для перезапуска
-            btnStop.textContent = '▶ Включить камеру';
-            btnStop.style.background = '#00c853';
-            btnStop.onclick = restartCamera;
+            updateUI(false);
         }
 
-        function restartCamera() {
-            btnStop.textContent = '⏹ Выключить камеру';
-            btnStop.style.background = '#ff1744';
-            btnStop.onclick = stopCamera;
-            startCamera();
+        // Переключатель режимов
+        function toggleCamera() {
+            if (stream) {
+                stopCamera();
+            } else {
+                startCamera();
+            }
         }
+
+        // Обновление внешнего вида кнопки и статуса
+        function updateUI(isOn) {
+            if (isOn) {
+                btn.textContent = '⏹ Выключить камеру';
+                btn.className   = 'btn-stop';
+                status.textContent = '🟢 Камера активна';
+                status.className   = 'status active';
+            } else {
+                btn.textContent = '▶ Включить камеру';
+                btn.className   = 'btn-start';
+                status.textContent = 'Камера выключена';
+                status.className   = 'status inactive';
+            }
+            btn.disabled = false; // Гарантируем кликабельность
+        }
+
+        function handleCameraError(err) {
+            placeholder.textContent = 'Нет сигнала';
+            placeholder.style.display = 'block';
+            video.style.display = 'none';
+            
+            if (err.name === 'NotAllowedError') {
+                errorMsg.textContent = '⚠ Вы запретили доступ к камере. Разрешите доступ в настройках браузера и обновите страницу.';
+            } else if (err.name === 'NotFoundError') {
+                errorMsg.textContent = '⚠ Камера не найдена на устройстве.';
+            } else {
+                errorMsg.textContent = `⚠ Ошибка: ${err.message}`;
+            }
+            errorMsg.style.display = 'block';
+            updateUI(false);
+        }
+
+        // Навешиваем обработчик один раз
+        btn.addEventListener('click', toggleCamera);
     </script>
 
 </body>
