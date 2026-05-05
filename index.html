@@ -21,8 +21,10 @@
     button.danger { background: #660000; }
     button.full { width: 100%; margin-top: 10px; }
     #log { margin-top: 15px; max-height: 25vh; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; font-family: monospace; font-size: 11px; color: #999; overflow-y: auto; line-height: 1.3; }
-    .log-item { margin: 2px 0; }
+    .log-item { margin: 2px 0; padding: 2px 4px; border-left: 2px solid transparent; }
+    .log-item:hover { background: rgba(0,255,0,0.05); border-left-color: #0f0; }
     .log-err { color: #f55; } .log-warn { color: #fa0; } .log-ok { color: #8f8; }
+    .log-detect { color: #0ff; font-weight: 500; }
     #toggleBtn { position: fixed; bottom: 20px; right: 20px; z-index: 2000; width: 50px; height: 50px; border-radius: 50%; background: #005500; color: #fff; border: 2px solid rgba(0,255,0,0.4); font-size: 20px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; transition: transform 0.2s, background 0.2s; }
     #toggleBtn:active { transform: scale(0.9); background: #003300; }
     #stats { position: fixed; bottom: 20px; left: 20px; background: rgba(0,0,0,0.6); color: #0f0; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-family: monospace; z-index: 1000; backdrop-filter: blur(4px); }
@@ -71,7 +73,6 @@
 
   <button id="toggleBtn" onclick="toggleConfig()">⚙️</button>
 
-  <!-- 🔽 НОВЫЕ БИБЛИОТЕКИ: Transformers.js вместо COCO-SSD -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
   <script type="module">
     import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2';
@@ -84,22 +85,28 @@
     let connectOptions = {};
     let CONF_THRESHOLD = 0.35;
     
+    // 🔽 Для логирования объектов
+    let lastLoggedObject = null;
+    let lastLogTime = 0;
+    const LOG_COOLDOWN = 2000; // Не логировать тот же объект чаще чем раз в 2 сек
+    
     const SEND_INTERVAL = 100;
     const CANVAS_WIDTH = 320;
     const CANVAS_HEIGHT = 240;
 
-    // Оптимизация окружения для мобильных
     env.backends.onnx.wasm.numThreads = 1;
     env.allowLocalModels = false;
 
-    // Делаем функции глобальными для onclick-обработчиков
-    window.log = (msg, type = 'info') => {
+    // Глобальные функции для onclick
+    window.log = (msg, type = 'info', className = '') => {
       const time = new Date().toLocaleTimeString();
-      const cls = type === 'err' ? 'log-err' : type === 'warn' ? 'log-warn' : 'log-ok';
+      const cls = type === 'err' ? 'log-err' : type === 'warn' ? 'log-warn' : type === 'detect' ? 'log-detect' : 'log-ok';
       const div = document.createElement('div');
-      div.className = `log-item ${cls}`; div.textContent = `[${time}] ${msg}`;
-      document.getElementById('log').insertBefore(div, document.getElementById('log').firstChild);
-      while (document.getElementById('log').children.length > 20) document.getElementById('log').removeChild(document.getElementById('log').lastChild);
+      div.className = `log-item ${cls} ${className}`;
+      div.textContent = `[${time}] ${msg}`;
+      const logEl = document.getElementById('log');
+      logEl.insertBefore(div, logEl.firstChild);
+      while (logEl.children.length > 30) logEl.removeChild(logEl.lastChild);
     };
     window.updateStatus = (msg) => { document.getElementById('statusBar').textContent = msg; };
     window.toggleConfig = () => { document.getElementById('configPanel').classList.toggle('open'); };
@@ -123,12 +130,12 @@
     document.getElementById('thresholdSlider').addEventListener('input', e => { 
       CONF_THRESHOLD = parseInt(e.target.value)/100; 
       document.getElementById('thresholdValue').textContent = e.target.value+'%'; 
-      window.log(`🎯 Порог: ${e.target.value}%`); 
+      window.log(`🎯 Порог изменён: ${e.target.value}%`, 'info'); 
     });
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && tracking) { 
-        window.log('⚠️ Вкладка в фоне', 'warn'); window.updateStatus('⚠️ Не сворачивайте!'); 
+        window.log('⚠️ Вкладка ушла в фон — возможны обрывы MQTT', 'warn'); window.updateStatus('⚠️ Не сворачивайте!'); 
       } else if (!document.hidden && tracking && mqtt && !mqtt.isConnected()) { 
         window.log('🔄 Восстанавливаю MQTT...', 'info'); mqtt.connect(connectOptions); 
       }
@@ -159,7 +166,7 @@
         document.getElementById('resLabel').textContent = `${CANVAS_WIDTH}×${CANVAS_HEIGHT}`;
         document.getElementById('resLabel').classList.remove('hidden');
         
-        window.log('✅ Камера OK', 'ok'); window.updateStatus('🔌 MQTT...');
+        window.log('✅ Камера активна', 'ok'); window.updateStatus('🔌 MQTT...');
 
         const host = document.getElementById('mqttHost').value.trim();
         const port = parseInt(document.getElementById('mqttPort').value) || 8884;
@@ -197,23 +204,21 @@
         mqtt.connect(connectOptions);
         toggleConfig();
       } catch (e) { 
-        window.log(`❌ ${e.message}`, 'err'); window.updateStatus(`❌ ${e.message}`); 
+        window.log(`❌ Ошибка: ${e.message}`, 'err'); window.updateStatus(`❌ ${e.message}`); 
         document.getElementById('btnStart').classList.remove('hidden'); document.getElementById('btnStop').classList.add('hidden'); 
       }
     };
 
-    // ================= ЗАГРУЗКА НОВОЙ МОДЕЛИ =================
     async function loadAI() {
       try {
-        // Пробуем WebGPU (быстро), если нет — падаем на WASM (медленнее, но работает везде)
         let device = 'wasm';
         try {
           if (navigator.gpu) {
             await navigator.gpu.requestAdapter();
             device = 'webgpu';
-            window.log('🚀 Используем WebGPU (аппаратное ускорение)', 'ok');
+            window.log('🚀 WebGPU доступен — ускорение включено', 'ok');
           }
-        } catch(e) { window.log('⚠️ WebGPU недоступен, используем WASM', 'warn'); }
+        } catch(e) { window.log('⚠️ WebGPU недоступен, используется WASM', 'warn'); }
 
         detector = await pipeline('object-detection', 'Xenova/yolov8n', { 
           device: device,
@@ -225,11 +230,31 @@
           }
         });
         
-        window.log('✅ YOLOv8n загружен!', 'ok'); 
+        window.log('✅ YOLOv8n загружен! Начинаю трекинг...', 'ok'); 
         window.updateStatus('🟢 ТРЕКИНГ АКТИВЕН');
         tracking = true; lastFpsTime = performance.now(); loop();
       } catch (e) { 
-        window.log(`❌ AI: ${e.message}`, 'err'); window.updateStatus('❌ AI Failed'); 
+        window.log(`❌ Ошибка AI: ${e.message}`, 'err'); window.updateStatus('❌ AI Failed'); 
+      }
+    }
+
+    // ================= 🔽 ФУНКЦИЯ ЛОГИРОВАНИЯ ОБЪЕКТОВ =================
+    function logDetectedObject(label, score, ex, ey) {
+      const now = Date.now();
+      const objKey = `${label}_${Math.round(score*100)}`;
+      
+      // Логируем если:
+      // 1. Это новый объект (не тот же, что в прошлый раз)
+      // 2. Или прошло больше LOG_COOLDOWN с последнего лога
+      if (objKey !== lastLoggedObject || (now - lastLogTime) >= LOG_COOLDOWN) {
+        const direction = [];
+        if (Math.abs(ex) > 15) direction.push(ex > 0 ? '→' : '←');
+        if (Math.abs(ey) > 15) direction.push(ey > 0 ? '↓' : '↑');
+        const dirStr = direction.length ? ` [${direction.join('')}]` : ' [● центр]';
+        
+        window.log(`🔍 ${label.toUpperCase()} ${Math.round(score*100)}%${dirStr} dx:${Math.round(ex)} dy:${Math.round(ey)}`, 'detect', 'log-detect');
+        lastLoggedObject = objKey;
+        lastLogTime = now;
       }
     }
 
@@ -245,23 +270,30 @@
       ctx.drawImage(vid, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
       
       try {
-        // 🔽 YOLOv8n inference (возвращает массив объектов с {label, score, box:{xmin,ymin,xmax,ymax}})
         const results = await detector(canvas, { threshold: CONF_THRESHOLD });
         
-        if (!results || results.length === 0) { drawCrosshair('#f00'); return; }
+        if (!results || results.length === 0) { 
+          drawCrosshair('#f00'); 
+          // Логируем потерю объекта (не чаще раза в 3 сек)
+          if (lastLoggedObject && (now - lastLogTime) >= 3000) {
+            window.log('🔻 Объект потерян', 'warn');
+            lastLoggedObject = null;
+          }
+          return; 
+        }
         
-        // Берём самый вероятный объект
         const obj = results[0];
-        const x = obj.box.xmin;
-        const y = obj.box.ymin;
-        const w = obj.box.xmax - x;
-        const h = obj.box.ymax - y;
+        const x = obj.box.xmin, y = obj.box.ymin;
+        const w = obj.box.xmax - x, h = obj.box.ymax - y;
         
         let cx = x + w/2, cy = y + h/2;
-        if (isMirrored) cx = CANVAS_WIDTH - cx; // Компенсация зеркала для координат
+        if (isMirrored) cx = CANVAS_WIDTH - cx;
         
         const ex = cx - CANVAS_WIDTH/2, ey = cy - CANVAS_HEIGHT/2;
         document.getElementById('objCount').textContent = results.length;
+        
+        // 🔽 ЛОГИРУЕМ ОБНАРУЖЕННЫЙ ОБЪЕКТ
+        logDetectedObject(obj.label, obj.score, ex, ey);
         
         // Отрисовка
         ctx.strokeStyle = '#0f0'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
@@ -273,10 +305,9 @@
         // Отправка на M5Stack
         if (now - lastSend >= SEND_INTERVAL && mqtt?.isConnected()) {
           const payload = JSON.stringify({ 
-            ex: Math.round(ex), 
-            ey: Math.round(ey), 
+            ex: Math.round(ex), ey: Math.round(ey), 
             conf: parseFloat(obj.score.toFixed(3)), 
-            class: obj.label // 🔽 Ключ "class" для совместимости с вашим main.cpp
+            class: obj.label 
           });
           const msg = new Paho.MQTT.Message(payload);
           msg.destinationName = document.getElementById('mqttTopic').value.trim() || 'servo/control';
@@ -306,7 +337,7 @@
     };
 
     window.onerror = (msg, url, line) => { window.log(`💥 ${msg} (L${line})`, 'err'); return false; };
-    console.log('🎯 Pan-Tilt AI Tracker v2 (YOLOv8n) Ready');
+    console.log('🎯 Pan-Tilt AI Tracker v2 Ready');
   </script>
 </body>
 </html>
