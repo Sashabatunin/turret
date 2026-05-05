@@ -3,40 +3,122 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Pan-Tilt AI Tracker v2</title>
+  <title>Pan-Tilt AI Tracker</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #000; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; touch-action: none; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-    #videoContainer { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #000; z-index: 1; }
-    #canvas { max-width: 100vw; max-height: 100vh; width: auto; height: auto; display: block; image-rendering: pixelated; }
-    #statusBar { position: fixed; top: 10px; left: 10px; right: 10px; background: rgba(0,0,0,0.6); color: #0f0; padding: 8px 12px; border-radius: 8px; z-index: 1000; text-align: center; font-size: 12px; backdrop-filter: blur(4px); border: 1px solid rgba(0,255,0,0.3); }
-    #configPanel { position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 1500; display: flex; flex-direction: column; padding: 20px; overflow-y: auto; transform: translateY(100%); opacity: 0; pointer-events: none; transition: transform 0.3s ease, opacity 0.3s ease; }
+    body { 
+      background: #000; 
+      overflow: hidden; 
+      font-family: system-ui, -apple-system, sans-serif; 
+      touch-action: none; 
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    
+    /* 🔽 Контейнер для сохранения пропорций видео */
+    #videoContainer {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      z-index: 1;
+    }
+    
+    #canvas {
+      max-width: 100vw;
+      max-height: 100vh;
+      width: auto;
+      height: auto;
+      display: block;
+      image-rendering: pixelated; /* Чёткое масштабирование */
+    }
+    
+    #statusBar { 
+      position: fixed; top: 10px; left: 10px; right: 10px; 
+      background: rgba(0,0,0,0.6); color: #0f0; padding: 8px 12px; 
+      border-radius: 8px; z-index: 1000; text-align: center; font-size: 12px; 
+      backdrop-filter: blur(4px); border: 1px solid rgba(0,255,0,0.3); 
+    }
+    
+    #configPanel { 
+      position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); 
+      z-index: 1500; display: flex; flex-direction: column; padding: 20px; overflow-y: auto; 
+      transform: translateY(100%); opacity: 0; pointer-events: none; 
+      transition: transform 0.3s ease, opacity 0.3s ease; 
+    }
     #configPanel.open { transform: translateY(0); opacity: 1; pointer-events: auto; }
+    
     .row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-    .row input { flex: 1; min-width: 100px; background: rgba(30,30,30,0.9); color: #0f0; border: 1px solid #444; padding: 10px; border-radius: 8px; font-size: 14px; outline: none; }
+    .row input { 
+      flex: 1; min-width: 100px; background: rgba(30,30,30,0.9); color: #0f0; 
+      border: 1px solid #444; padding: 10px; border-radius: 8px; font-size: 14px; outline: none; 
+    }
     .row input:focus { border-color: #0f0; box-shadow: 0 0 0 2px rgba(0,255,0,0.2); }
-    button { background: #005500; color: #fff; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; transition: transform 0.1s, background 0.2s; }
+    
+    button { 
+      background: #005500; color: #fff; border: none; padding: 12px; 
+      border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; 
+      transition: transform 0.1s, background 0.2s; 
+    }
     button:active { transform: scale(0.96); background: #003300; }
     button.secondary { background: #333; }
     button.danger { background: #660000; }
     button.full { width: 100%; margin-top: 10px; }
-    #log { margin-top: 15px; max-height: 25vh; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; font-family: monospace; font-size: 11px; color: #999; overflow-y: auto; line-height: 1.3; }
+    
+    #log { 
+      margin-top: 15px; max-height: 25vh; background: rgba(0,0,0,0.5); 
+      padding: 10px; border-radius: 8px; font-family: monospace; font-size: 11px; 
+      color: #999; overflow-y: auto; line-height: 1.3; 
+    }
     .log-item { margin: 2px 0; }
     .log-err { color: #f55; } .log-warn { color: #fa0; } .log-ok { color: #8f8; }
-    #toggleBtn { position: fixed; bottom: 20px; right: 20px; z-index: 2000; width: 50px; height: 50px; border-radius: 50%; background: #005500; color: #fff; border: 2px solid rgba(0,255,0,0.4); font-size: 20px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; transition: transform 0.2s, background 0.2s; }
+    
+    #toggleBtn { 
+      position: fixed; bottom: 20px; right: 20px; z-index: 2000; 
+      width: 50px; height: 50px; border-radius: 50%; background: #005500; color: #fff; 
+      border: 2px solid rgba(0,255,0,0.4); font-size: 20px; cursor: pointer; 
+      box-shadow: 0 4px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; 
+      transition: transform 0.2s, background 0.2s; 
+    }
     #toggleBtn:active { transform: scale(0.9); background: #003300; }
-    #stats { position: fixed; bottom: 20px; left: 20px; background: rgba(0,0,0,0.6); color: #0f0; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-family: monospace; z-index: 1000; backdrop-filter: blur(4px); }
-    .threshold-box { margin-top: 15px; background: rgba(30,30,30,0.6); padding: 12px; border-radius: 8px; border: 1px solid rgba(0,255,0,0.2); }
+    
+    #stats { 
+      position: fixed; bottom: 20px; left: 20px; background: rgba(0,0,0,0.6); 
+      color: #0f0; padding: 6px 10px; border-radius: 6px; font-size: 11px; 
+      font-family: monospace; z-index: 1000; backdrop-filter: blur(4px); 
+    }
+    
+    .threshold-box { 
+      margin-top: 15px; background: rgba(30,30,30,0.6); padding: 12px; 
+      border-radius: 8px; border: 1px solid rgba(0,255,0,0.2); 
+    }
     .threshold-box label { display: flex; justify-content: space-between; font-size: 12px; color: #0f0; margin-bottom: 6px; }
     input[type="range"] { width: 100%; accent-color: #0f0; height: 6px; }
     .threshold-hint { font-size: 10px; color: #888; margin-top: 5px; }
-    #resLabel { position: fixed; top: 10px; right: 10px; background: rgba(0,0,0,0.6); color: #0f0; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-family: monospace; z-index: 1000; backdrop-filter: blur(4px); }
+    
     .hidden { display: none !important; }
+    
+    /* Подпись с разрешением */
+    #resLabel {
+      position: fixed; top: 10px; right: 10px; 
+      background: rgba(0,0,0,0.6); color: #0f0; padding: 4px 8px; 
+      border-radius: 4px; font-size: 10px; font-family: monospace; 
+      z-index: 1000; backdrop-filter: blur(4px);
+    }
   </style>
 </head>
 <body>
   <video id="vid" style="display:none" autoplay playsinline muted></video>
-  <div id="videoContainer"><canvas id="canvas"></canvas></div>
+  
+  <!-- 🔽 Контейнер для правильного масштабирования -->
+  <div id="videoContainer">
+    <canvas id="canvas"></canvas>
+  </div>
+  
   <div id="statusBar">📴 Готов к запуску</div>
   <div id="resLabel" class="hidden">320×240</div>
   <div id="stats" class="hidden">FPS:<span id="fps">0</span> | Obj:<span id="objCount">0</span> | Sent:<span id="sentCount">0</span></div>
@@ -52,6 +134,7 @@
       <input id="mqttPass" type="password" placeholder="Password">
       <input id="mqttTopic" placeholder="Topic" value="servo/control">
     </div>
+    
     <div style="display: flex; gap: 8px; margin-top: 10px;">
       <button id="btnStart" onclick="init()" style="flex:1;">🚀 СТАРТ</button>
       <button id="btnStop" class="hidden danger" onclick="stop()" style="flex:1;">⏹ СТОП</button>
@@ -60,22 +143,24 @@
       <button class="secondary" onclick="toggleMirror()" style="flex:1;">🪞 Зеркало: <span id="mirrorState">OFF</span></button>
       <button class="secondary" onclick="resetServos()" style="flex:1;">🔄 Центр</button>
     </div>
+
     <div class="threshold-box">
       <label><span>🎯 Порог уверенности</span><span id="thresholdValue">35%</span></label>
       <input id="thresholdSlider" type="range" min="10" max="90" value="35" step="5">
       <div class="threshold-hint">Меньше = больше объектов. Больше = стабильнее.</div>
     </div>
+
     <div id="log"></div>
     <button class="full secondary" onclick="toggleConfig()">✖ Закрыть настройки</button>
   </div>
 
   <button id="toggleBtn" onclick="toggleConfig()">⚙️</button>
 
-  <!-- 🔽 НОВЫЕ БИБЛИОТЕКИ: Transformers.js вместо COCO-SSD -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
-  <script type="module">
-    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2';
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
 
+  <script>
     // ================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =================
     let detector, mqtt, vid, ctx, canvas, videoContainer;
     let tracking = false;
@@ -88,78 +173,88 @@
     const CANVAS_WIDTH = 320;
     const CANVAS_HEIGHT = 240;
 
-    // Оптимизация окружения для мобильных
-    env.backends.onnx.wasm.numThreads = 1;
-    env.allowLocalModels = false;
+    const ui = {
+      status: document.getElementById('statusBar'), log: document.getElementById('log'),
+      btnStart: document.getElementById('btnStart'), btnStop: document.getElementById('btnStop'),
+      stats: document.getElementById('stats'), fps: document.getElementById('fps'),
+      objCount: document.getElementById('objCount'), sentCount: document.getElementById('sentCount'),
+      mirrorState: document.getElementById('mirrorState'), configPanel: document.getElementById('configPanel'),
+      thresholdSlider: document.getElementById('thresholdSlider'), thresholdValue: document.getElementById('thresholdValue'),
+      resLabel: document.getElementById('resLabel')
+    };
 
-    // Делаем функции глобальными для onclick-обработчиков
-    window.log = (msg, type = 'info') => {
+    function log(msg, type = 'info') {
       const time = new Date().toLocaleTimeString();
       const cls = type === 'err' ? 'log-err' : type === 'warn' ? 'log-warn' : 'log-ok';
       const div = document.createElement('div');
       div.className = `log-item ${cls}`; div.textContent = `[${time}] ${msg}`;
-      document.getElementById('log').insertBefore(div, document.getElementById('log').firstChild);
-      while (document.getElementById('log').children.length > 20) document.getElementById('log').removeChild(document.getElementById('log').lastChild);
-    };
-    window.updateStatus = (msg) => { document.getElementById('statusBar').textContent = msg; };
-    window.toggleConfig = () => { document.getElementById('configPanel').classList.toggle('open'); };
+      ui.log.insertBefore(div, ui.log.firstChild);
+      while (ui.log.children.length > 20) ui.log.removeChild(ui.log.lastChild);
+      console.log(`[${type.toUpperCase()}] ${msg}`);
+    }
+    function updateStatus(msg) { ui.status.textContent = msg; }
+    function toggleConfig() { ui.configPanel.classList.toggle('open'); }
     
-    window.toggleMirror = () => {
+    function toggleMirror() {
       isMirrored = !isMirrored;
       canvas.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
-      document.getElementById('mirrorState').textContent = isMirrored ? 'ON' : 'OFF';
-      document.getElementById('mirrorState').style.color = isMirrored ? '#0f0' : '#888';
-    };
+      ui.mirrorState.textContent = isMirrored ? 'ON' : 'OFF';
+      ui.mirrorState.style.color = isMirrored ? '#0f0' : '#888';
+    }
     
-    window.resetServos = () => {
+    function resetServos() {
       if (mqtt?.isConnected()) {
         const msg = new Paho.MQTT.Message(JSON.stringify({ ex: 0, ey: 0, conf: 1.0, cmd: 'center' }));
         msg.destinationName = document.getElementById('mqttTopic').value.trim() || 'servo/control';
         mqtt.send(msg);
-        window.log('🔄 Отправлена команда: центр', 'ok');
-      } else window.log('⚠️ MQTT не подключен', 'warn');
-    };
+        log('🔄 Отправлена команда: центр', 'ok');
+      } else log('⚠️ MQTT не подключен', 'warn');
+    }
 
-    document.getElementById('thresholdSlider').addEventListener('input', e => { 
+    ui.thresholdSlider.addEventListener('input', e => { 
       CONF_THRESHOLD = parseInt(e.target.value)/100; 
-      document.getElementById('thresholdValue').textContent = e.target.value+'%'; 
-      window.log(`🎯 Порог: ${e.target.value}%`); 
+      ui.thresholdValue.textContent = e.target.value+'%'; 
+      log(`🎯 Порог: ${e.target.value}%`); 
     });
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && tracking) { 
-        window.log('⚠️ Вкладка в фоне', 'warn'); window.updateStatus('⚠️ Не сворачивайте!'); 
+        log('⚠️ Вкладка в фоне', 'warn'); updateStatus('⚠️ Не сворачивайте!'); 
       } else if (!document.hidden && tracking && mqtt && !mqtt.isConnected()) { 
-        window.log('🔄 Восстанавливаю MQTT...', 'info'); mqtt.connect(connectOptions); 
+        log('🔄 Восстанавливаю MQTT...', 'info'); mqtt.connect(connectOptions); 
       }
     });
 
     // ================= ИНИЦИАЛИЗАЦИЯ =================
-    window.init = async () => {
+    async function init() {
       try {
-        document.getElementById('btnStart').classList.add('hidden'); 
-        document.getElementById('btnStop').classList.remove('hidden'); 
-        document.getElementById('stats').classList.remove('hidden');
-        window.updateStatus('📷 Камера...'); window.log('Запрос камеры...', 'info');
+        ui.btnStart.classList.add('hidden'); ui.btnStop.classList.remove('hidden'); ui.stats.classList.remove('hidden');
+        updateStatus('📷 Камера...'); log('Запрос камеры...', 'info');
         
         vid = document.getElementById('vid'); 
         canvas = document.getElementById('canvas'); 
         videoContainer = document.getElementById('videoContainer');
         ctx = canvas.getContext('2d');
         
+        // Запрос камеры
         const stream = await navigator.mediaDevices.getUserMedia({ 
           video: { facingMode: 'environment', width: { ideal: 320 }, height: { ideal: 240 } }, 
           audio: false 
         });
         vid.srcObject = stream;
-        await new Promise(resolve => { vid.onloadedmetadata = () => { vid.play(); resolve(); }; });
+        await new Promise(resolve => { 
+          vid.onloadedmetadata = () => { vid.play(); resolve(); }; 
+        });
         
+        // Фиксированное внутреннее разрешение для AI
         canvas.width = CANVAS_WIDTH; 
         canvas.height = CANVAS_HEIGHT;
-        document.getElementById('resLabel').textContent = `${CANVAS_WIDTH}×${CANVAS_HEIGHT}`;
-        document.getElementById('resLabel').classList.remove('hidden');
         
-        window.log('✅ Камера OK', 'ok'); window.updateStatus('🔌 MQTT...');
+        // Показываем реальное разрешение для отладки
+        ui.resLabel.textContent = `${CANVAS_WIDTH}×${CANVAS_HEIGHT}`;
+        ui.resLabel.classList.remove('hidden');
+        
+        log('✅ Камера OK', 'ok'); updateStatus('🔌 MQTT...');
 
         const host = document.getElementById('mqttHost').value.trim();
         const port = parseInt(document.getElementById('mqttPort').value) || 8884;
@@ -174,63 +269,32 @@
         connectOptions = {
           timeout: 30, keepAliveInterval: 30, cleanSession: true,
           useSSL: location.protocol === 'https:', mqttVersion: 4,
-          onSuccess: () => { 
-            window.log('✅ MQTT подключен', 'ok'); 
-            window.updateStatus('⏳ Загрузка YOLOv8n (~6MB)...'); 
-            mqtt.subscribe(topic); 
-            loadAI(); 
-          },
-          onFailure: (res) => { 
-            window.log(`❌ MQTT: ${res.errorMessage} (code: ${res.errorCode})`, 'err'); 
-            window.updateStatus('❌ MQTT Failed'); 
-            setTimeout(() => { if (!mqtt.isConnected()) mqtt.connect(connectOptions); }, 3000); 
-          }
+          onSuccess: () => { log('✅ MQTT подключен', 'ok'); updateStatus('⏳ AI...'); mqtt.subscribe(topic); loadAI(); },
+          onFailure: (res) => { log(`❌ MQTT: ${res.errorMessage} (code: ${res.errorCode})`, 'err'); updateStatus('❌ MQTT Failed'); setTimeout(() => { if (!mqtt.isConnected()) mqtt.connect(connectOptions); }, 3000); }
         };
         if (user) { connectOptions.userName = user; connectOptions.password = pass; }
 
         mqtt.onConnectionLost = (res) => {
-          window.log(`🔴 MQTT отключен: ${res.errorMessage} (code: ${res.errorCode})`, 'err');
-          window.updateStatus(`🔴 Lost: ${res.errorMessage}`);
+          log(`🔴 MQTT отключен: ${res.errorMessage} (code: ${res.errorCode})`, 'err');
+          updateStatus(`🔴 Lost: ${res.errorMessage}`);
           if ([0, 1, 3, 6, 7].includes(res.errorCode)) setTimeout(() => { if (!mqtt.isConnected()) mqtt.connect(connectOptions); }, 3000);
         };
         
         mqtt.connect(connectOptions);
         toggleConfig();
       } catch (e) { 
-        window.log(`❌ ${e.message}`, 'err'); window.updateStatus(`❌ ${e.message}`); 
-        document.getElementById('btnStart').classList.remove('hidden'); document.getElementById('btnStop').classList.add('hidden'); 
+        log(`❌ ${e.message}`, 'err'); updateStatus(`❌ ${e.message}`); 
+        ui.btnStart.classList.remove('hidden'); ui.btnStop.classList.add('hidden'); 
       }
-    };
+    }
 
-    // ================= ЗАГРУЗКА НОВОЙ МОДЕЛИ =================
     async function loadAI() {
       try {
-        // Пробуем WebGPU (быстро), если нет — падаем на WASM (медленнее, но работает везде)
-        let device = 'wasm';
-        try {
-          if (navigator.gpu) {
-            await navigator.gpu.requestAdapter();
-            device = 'webgpu';
-            window.log('🚀 Используем WebGPU (аппаратное ускорение)', 'ok');
-          }
-        } catch(e) { window.log('⚠️ WebGPU недоступен, используем WASM', 'warn'); }
-
-        detector = await pipeline('object-detection', 'Xenova/yolov8n', { 
-          device: device,
-          progress_callback: (progress) => {
-            if (progress.status === 'download' && progress.file) {
-              const pct = progress.progress ? Math.round(progress.progress * 100) : '?';
-              window.updateStatus(`📥 ${progress.file}: ${pct}%`);
-            }
-          }
-        });
-        
-        window.log('✅ YOLOv8n загружен!', 'ok'); 
-        window.updateStatus('🟢 ТРЕКИНГ АКТИВЕН');
+        updateStatus('⏳ Загрузка AI (10-20 сек)...'); log('Загрузка COCO-SSD...', 'info');
+        detector = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+        log('✅ AI готов!', 'ok'); updateStatus('🟢 ТРЕКИНГ АКТИВЕН');
         tracking = true; lastFpsTime = performance.now(); loop();
-      } catch (e) { 
-        window.log(`❌ AI: ${e.message}`, 'err'); window.updateStatus('❌ AI Failed'); 
-      }
+      } catch (e) { log(`❌ AI: ${e.message}`, 'err'); updateStatus('❌ AI Failed'); }
     }
 
     // ================= ОСНОВНОЙ ЦИКЛ =================
@@ -238,51 +302,38 @@
       if (!tracking) return;
       requestAnimationFrame(loop); frameCount++;
       const now = performance.now(); 
-      if (now - lastFpsTime >= 1000) { 
-        document.getElementById('fps').textContent = frameCount; frameCount = 0; lastFpsTime = now; 
-      }
+      if (now - lastFpsTime >= 1000) { ui.fps.textContent = frameCount; frameCount = 0; lastFpsTime = now; }
       
+      // Рисуем кадр на внутренний канвас (320×240)
       ctx.drawImage(vid, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
       
       try {
-        // 🔽 YOLOv8n inference (возвращает массив объектов с {label, score, box:{xmin,ymin,xmax,ymax}})
-        const results = await detector(canvas, { threshold: CONF_THRESHOLD });
+        const preds = await detector.detect(canvas);
+        const valid = preds.filter(p => p.score >= CONF_THRESHOLD);
+        ui.objCount.textContent = valid.length;
+        if (valid.length === 0) { drawCrosshair('#f00'); return; }
         
-        if (!results || results.length === 0) { drawCrosshair('#f00'); return; }
-        
-        // Берём самый вероятный объект
-        const obj = results[0];
-        const x = obj.box.xmin;
-        const y = obj.box.ymin;
-        const w = obj.box.xmax - x;
-        const h = obj.box.ymax - y;
-        
+        const obj = valid[0];
+        const [x, y, w, h] = obj.bbox;
         let cx = x + w/2, cy = y + h/2;
         if (isMirrored) cx = CANVAS_WIDTH - cx; // Компенсация зеркала для координат
         
         const ex = cx - CANVAS_WIDTH/2, ey = cy - CANVAS_HEIGHT/2;
-        document.getElementById('objCount').textContent = results.length;
         
-        // Отрисовка
+        // Отрисовка на канвасе (внутренние координаты 320×240)
         ctx.strokeStyle = '#0f0'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
         ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI*2); ctx.fillStyle = '#0f0'; ctx.fill();
         drawCrosshair('#0f0');
         ctx.fillStyle = '#0f0'; ctx.font = 'bold 11px monospace';
-        ctx.fillText(`${obj.label} ${Math.round(obj.score*100)}%`, x, y-8);
+        ctx.fillText(`${obj.class} ${Math.round(obj.score*100)}%`, x, y-8);
         
-        // Отправка на M5Stack
         if (now - lastSend >= SEND_INTERVAL && mqtt?.isConnected()) {
-          const payload = JSON.stringify({ 
-            ex: Math.round(ex), 
-            ey: Math.round(ey), 
-            conf: parseFloat(obj.score.toFixed(3)), 
-            class: obj.label // 🔽 Ключ "class" для совместимости с вашим main.cpp
-          });
+          const payload = JSON.stringify({ ex: Math.round(ex), ey: Math.round(ey), conf: parseFloat(obj.score.toFixed(3)), class: obj.class });
           const msg = new Paho.MQTT.Message(payload);
           msg.destinationName = document.getElementById('mqttTopic').value.trim() || 'servo/control';
-          mqtt.send(msg); sentCount++; document.getElementById('sentCount').textContent = sentCount; lastSend = now;
+          mqtt.send(msg); sentCount++; ui.sentCount.textContent = sentCount; lastSend = now;
         }
-      } catch (e) { console.error('Detection error:', e); }
+      } catch (e) { console.error(e); }
     }
 
     function drawCrosshair(color) {
@@ -293,20 +344,20 @@
       ctx.stroke(); ctx.setLineDash([]);
     }
 
-    window.stop = () => {
-      tracking = false; window.updateStatus('⏹ Остановлено');
+    function stop() {
+      tracking = false; updateStatus('⏹ Остановлено');
       if (vid?.srcObject) vid.srcObject.getTracks().forEach(t => t.stop());
       if (mqtt?.isConnected()) mqtt.disconnect();
-      document.getElementById('btnStart').classList.remove('hidden'); document.getElementById('btnStop').classList.add('hidden'); document.getElementById('stats').classList.add('hidden');
-      document.getElementById('resLabel').classList.add('hidden');
+      ui.btnStart.classList.remove('hidden'); ui.btnStop.classList.add('hidden'); ui.stats.classList.add('hidden');
+      ui.resLabel.classList.add('hidden');
       ctx.fillStyle = '#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
       ctx.fillStyle = '#666'; ctx.font = '16px monospace'; ctx.textAlign = 'center';
       ctx.fillText('Остановлено', canvas.width/2, canvas.height/2); ctx.textAlign = 'left';
       toggleConfig();
-    };
+    }
 
-    window.onerror = (msg, url, line) => { window.log(`💥 ${msg} (L${line})`, 'err'); return false; };
-    console.log('🎯 Pan-Tilt AI Tracker v2 (YOLOv8n) Ready');
+    window.onerror = (msg, url, line) => { log(`💥 ${msg} (L${line})`, 'err'); return false; };
+    console.log('🎯 Pan-Tilt Tracker Ready');
   </script>
 </body>
 </html>
