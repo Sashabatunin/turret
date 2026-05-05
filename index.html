@@ -6,36 +6,121 @@
   <title>Pan-Tilt AI Tracker</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #000; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; touch-action: none; }
-    #canvas { width: 100vw; height: 100vh; display: block; }
-    #statusBar { position: fixed; top: 10px; left: 10px; right: 10px; background: rgba(0,0,0,0.6); color: #0f0; padding: 8px 12px; border-radius: 8px; z-index: 1000; text-align: center; font-size: 12px; backdrop-filter: blur(4px); border: 1px solid rgba(0,255,0,0.3); transition: opacity 0.3s; }
-    #configPanel { position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 1500; display: flex; flex-direction: column; padding: 20px; overflow-y: auto; transform: translateY(100%); opacity: 0; pointer-events: none; transition: transform 0.3s ease, opacity 0.3s ease; }
+    body { 
+      background: #000; 
+      overflow: hidden; 
+      font-family: system-ui, -apple-system, sans-serif; 
+      touch-action: none; 
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    
+    /* 🔽 Контейнер для сохранения пропорций видео */
+    #videoContainer {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      z-index: 1;
+    }
+    
+    #canvas {
+      max-width: 100vw;
+      max-height: 100vh;
+      width: auto;
+      height: auto;
+      display: block;
+      image-rendering: pixelated; /* Чёткое масштабирование */
+    }
+    
+    #statusBar { 
+      position: fixed; top: 10px; left: 10px; right: 10px; 
+      background: rgba(0,0,0,0.6); color: #0f0; padding: 8px 12px; 
+      border-radius: 8px; z-index: 1000; text-align: center; font-size: 12px; 
+      backdrop-filter: blur(4px); border: 1px solid rgba(0,255,0,0.3); 
+    }
+    
+    #configPanel { 
+      position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); 
+      z-index: 1500; display: flex; flex-direction: column; padding: 20px; overflow-y: auto; 
+      transform: translateY(100%); opacity: 0; pointer-events: none; 
+      transition: transform 0.3s ease, opacity 0.3s ease; 
+    }
     #configPanel.open { transform: translateY(0); opacity: 1; pointer-events: auto; }
+    
     .row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-    .row input { flex: 1; min-width: 100px; background: rgba(30,30,30,0.9); color: #0f0; border: 1px solid #444; padding: 10px; border-radius: 8px; font-size: 14px; outline: none; }
+    .row input { 
+      flex: 1; min-width: 100px; background: rgba(30,30,30,0.9); color: #0f0; 
+      border: 1px solid #444; padding: 10px; border-radius: 8px; font-size: 14px; outline: none; 
+    }
     .row input:focus { border-color: #0f0; box-shadow: 0 0 0 2px rgba(0,255,0,0.2); }
-    button { background: #005500; color: #fff; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; transition: transform 0.1s, background 0.2s; }
+    
+    button { 
+      background: #005500; color: #fff; border: none; padding: 12px; 
+      border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; 
+      transition: transform 0.1s, background 0.2s; 
+    }
     button:active { transform: scale(0.96); background: #003300; }
     button.secondary { background: #333; }
     button.danger { background: #660000; }
     button.full { width: 100%; margin-top: 10px; }
-    #log { margin-top: 15px; max-height: 25vh; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; font-family: monospace; font-size: 11px; color: #999; overflow-y: auto; line-height: 1.3; }
+    
+    #log { 
+      margin-top: 15px; max-height: 25vh; background: rgba(0,0,0,0.5); 
+      padding: 10px; border-radius: 8px; font-family: monospace; font-size: 11px; 
+      color: #999; overflow-y: auto; line-height: 1.3; 
+    }
     .log-item { margin: 2px 0; }
     .log-err { color: #f55; } .log-warn { color: #fa0; } .log-ok { color: #8f8; }
-    #toggleBtn { position: fixed; bottom: 20px; right: 20px; z-index: 2000; width: 50px; height: 50px; border-radius: 50%; background: #005500; color: #fff; border: 2px solid rgba(0,255,0,0.4); font-size: 20px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; transition: transform 0.2s, background 0.2s; }
+    
+    #toggleBtn { 
+      position: fixed; bottom: 20px; right: 20px; z-index: 2000; 
+      width: 50px; height: 50px; border-radius: 50%; background: #005500; color: #fff; 
+      border: 2px solid rgba(0,255,0,0.4); font-size: 20px; cursor: pointer; 
+      box-shadow: 0 4px 12px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; 
+      transition: transform 0.2s, background 0.2s; 
+    }
     #toggleBtn:active { transform: scale(0.9); background: #003300; }
-    #stats { position: fixed; bottom: 20px; left: 20px; background: rgba(0,0,0,0.6); color: #0f0; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-family: monospace; z-index: 1000; backdrop-filter: blur(4px); }
-    .threshold-box { margin-top: 15px; background: rgba(30,30,30,0.6); padding: 12px; border-radius: 8px; border: 1px solid rgba(0,255,0,0.2); }
+    
+    #stats { 
+      position: fixed; bottom: 20px; left: 20px; background: rgba(0,0,0,0.6); 
+      color: #0f0; padding: 6px 10px; border-radius: 6px; font-size: 11px; 
+      font-family: monospace; z-index: 1000; backdrop-filter: blur(4px); 
+    }
+    
+    .threshold-box { 
+      margin-top: 15px; background: rgba(30,30,30,0.6); padding: 12px; 
+      border-radius: 8px; border: 1px solid rgba(0,255,0,0.2); 
+    }
     .threshold-box label { display: flex; justify-content: space-between; font-size: 12px; color: #0f0; margin-bottom: 6px; }
     input[type="range"] { width: 100%; accent-color: #0f0; height: 6px; }
     .threshold-hint { font-size: 10px; color: #888; margin-top: 5px; }
+    
     .hidden { display: none !important; }
+    
+    /* Подпись с разрешением */
+    #resLabel {
+      position: fixed; top: 10px; right: 10px; 
+      background: rgba(0,0,0,0.6); color: #0f0; padding: 4px 8px; 
+      border-radius: 4px; font-size: 10px; font-family: monospace; 
+      z-index: 1000; backdrop-filter: blur(4px);
+    }
   </style>
 </head>
 <body>
   <video id="vid" style="display:none" autoplay playsinline muted></video>
-  <canvas id="canvas"></canvas>
+  
+  <!-- 🔽 Контейнер для правильного масштабирования -->
+  <div id="videoContainer">
+    <canvas id="canvas"></canvas>
+  </div>
+  
   <div id="statusBar">📴 Готов к запуску</div>
+  <div id="resLabel" class="hidden">320×240</div>
   <div id="stats" class="hidden">FPS:<span id="fps">0</span> | Obj:<span id="objCount">0</span> | Sent:<span id="sentCount">0</span></div>
 
   <div id="configPanel">
@@ -59,14 +144,10 @@
       <button class="secondary" onclick="resetServos()" style="flex:1;">🔄 Центр</button>
     </div>
 
-    <!-- 🔽 НОВЫЙ БЛОК: ПОРОГ УВЕРЕННОСТИ -->
     <div class="threshold-box">
-      <label>
-        <span>🎯 Порог уверенности</span>
-        <span id="thresholdValue">35%</span>
-      </label>
+      <label><span>🎯 Порог уверенности</span><span id="thresholdValue">35%</span></label>
       <input id="thresholdSlider" type="range" min="10" max="90" value="35" step="5">
-      <div class="threshold-hint">Меньше = больше объектов (возможен шум). Больше = стабильнее, но реже детекция.</div>
+      <div class="threshold-hint">Меньше = больше объектов. Больше = стабильнее.</div>
     </div>
 
     <div id="log"></div>
@@ -81,12 +162,12 @@
 
   <script>
     // ================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =================
-    let detector, mqtt, vid, ctx, canvas;
+    let detector, mqtt, vid, ctx, canvas, videoContainer;
     let tracking = false;
     let lastSend = 0, frameCount = 0, lastFpsTime = 0, sentCount = 0;
     let isMirrored = false;
     let connectOptions = {};
-    let CONF_THRESHOLD = 0.35; // ✅ Теперь изменяемый
+    let CONF_THRESHOLD = 0.35;
     
     const SEND_INTERVAL = 100;
     const CANVAS_WIDTH = 320;
@@ -97,13 +178,11 @@
       btnStart: document.getElementById('btnStart'), btnStop: document.getElementById('btnStop'),
       stats: document.getElementById('stats'), fps: document.getElementById('fps'),
       objCount: document.getElementById('objCount'), sentCount: document.getElementById('sentCount'),
-      mirrorState: document.getElementById('mirrorState'),
-      configPanel: document.getElementById('configPanel'),
-      thresholdSlider: document.getElementById('thresholdSlider'),
-      thresholdValue: document.getElementById('thresholdValue')
+      mirrorState: document.getElementById('mirrorState'), configPanel: document.getElementById('configPanel'),
+      thresholdSlider: document.getElementById('thresholdSlider'), thresholdValue: document.getElementById('thresholdValue'),
+      resLabel: document.getElementById('resLabel')
     };
 
-    // ================= ЛОГИРОВАНИЕ =================
     function log(msg, type = 'info') {
       const time = new Date().toLocaleTimeString();
       const cls = type === 'err' ? 'log-err' : type === 'warn' ? 'log-warn' : 'log-ok';
@@ -114,15 +193,15 @@
       console.log(`[${type.toUpperCase()}] ${msg}`);
     }
     function updateStatus(msg) { ui.status.textContent = msg; }
-
-    // ================= УПРАВЛЕНИЕ UI =================
     function toggleConfig() { ui.configPanel.classList.toggle('open'); }
+    
     function toggleMirror() {
       isMirrored = !isMirrored;
       canvas.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
       ui.mirrorState.textContent = isMirrored ? 'ON' : 'OFF';
       ui.mirrorState.style.color = isMirrored ? '#0f0' : '#888';
     }
+    
     function resetServos() {
       if (mqtt?.isConnected()) {
         const msg = new Paho.MQTT.Message(JSON.stringify({ ex: 0, ey: 0, conf: 1.0, cmd: 'center' }));
@@ -132,24 +211,17 @@
       } else log('⚠️ MQTT не подключен', 'warn');
     }
 
-    // ✅ СЛУШАТЕЛЬ СЛАЙДЕРА ПОРОГА
-    ui.thresholdSlider.addEventListener('input', (e) => {
-      CONF_THRESHOLD = parseInt(e.target.value) / 100;
-      ui.thresholdValue.textContent = e.target.value + '%';
-      log(`🎯 Порог изменён на ${e.target.value}%`, 'info');
+    ui.thresholdSlider.addEventListener('input', e => { 
+      CONF_THRESHOLD = parseInt(e.target.value)/100; 
+      ui.thresholdValue.textContent = e.target.value+'%'; 
+      log(`🎯 Порог: ${e.target.value}%`); 
     });
 
-    // ================= ПРЕДУПРЕЖДЕНИЕ О ФОНЕ =================
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden && tracking) {
-        log('⚠️ Вкладка ушла в фон — MQTT может отключиться!', 'warn');
-        updateStatus('⚠️ Не сворачивайте браузер!');
-      } else if (!document.hidden && tracking) {
-        log('✅ Вкладка активна', 'ok');
-        if (mqtt && !mqtt.isConnected()) {
-          log('🔄 Восстанавливаю MQTT...', 'info');
-          mqtt.connect(connectOptions);
-        }
+      if (document.hidden && tracking) { 
+        log('⚠️ Вкладка в фоне', 'warn'); updateStatus('⚠️ Не сворачивайте!'); 
+      } else if (!document.hidden && tracking && mqtt && !mqtt.isConnected()) { 
+        log('🔄 Восстанавливаю MQTT...', 'info'); mqtt.connect(connectOptions); 
       }
     });
 
@@ -158,13 +230,30 @@
       try {
         ui.btnStart.classList.add('hidden'); ui.btnStop.classList.remove('hidden'); ui.stats.classList.remove('hidden');
         updateStatus('📷 Камера...'); log('Запрос камеры...', 'info');
-        vid = document.getElementById('vid'); canvas = document.getElementById('canvas'); ctx = canvas.getContext('2d');
+        
+        vid = document.getElementById('vid'); 
+        canvas = document.getElementById('canvas'); 
+        videoContainer = document.getElementById('videoContainer');
+        ctx = canvas.getContext('2d');
+        
+        // Запрос камеры
         const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: 'environment', width: { ideal: 320 }, height: { ideal: 240 } }, audio: false 
+          video: { facingMode: 'environment', width: { ideal: 320 }, height: { ideal: 240 } }, 
+          audio: false 
         });
         vid.srcObject = stream;
-        await new Promise(resolve => { vid.onloadedmetadata = () => { vid.play(); resolve(); }; });
-        canvas.width = CANVAS_WIDTH; canvas.height = CANVAS_HEIGHT;
+        await new Promise(resolve => { 
+          vid.onloadedmetadata = () => { vid.play(); resolve(); }; 
+        });
+        
+        // Фиксированное внутреннее разрешение для AI
+        canvas.width = CANVAS_WIDTH; 
+        canvas.height = CANVAS_HEIGHT;
+        
+        // Показываем реальное разрешение для отладки
+        ui.resLabel.textContent = `${CANVAS_WIDTH}×${CANVAS_HEIGHT}`;
+        ui.resLabel.classList.remove('hidden');
+        
         log('✅ Камера OK', 'ok'); updateStatus('🔌 MQTT...');
 
         const host = document.getElementById('mqttHost').value.trim();
@@ -199,7 +288,6 @@
       }
     }
 
-    // ================= ЗАГРУЗКА AI =================
     async function loadAI() {
       try {
         updateStatus('⏳ Загрузка AI (10-20 сек)...'); log('Загрузка COCO-SSD...', 'info');
@@ -213,22 +301,26 @@
     async function loop() {
       if (!tracking) return;
       requestAnimationFrame(loop); frameCount++;
-      const now = performance.now();
+      const now = performance.now(); 
       if (now - lastFpsTime >= 1000) { ui.fps.textContent = frameCount; frameCount = 0; lastFpsTime = now; }
       
+      // Рисуем кадр на внутренний канвас (320×240)
       ctx.drawImage(vid, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      
       try {
         const preds = await detector.detect(canvas);
-        const valid = preds.filter(p => p.score >= CONF_THRESHOLD); // ✅ Использует динамический порог
+        const valid = preds.filter(p => p.score >= CONF_THRESHOLD);
         ui.objCount.textContent = valid.length;
         if (valid.length === 0) { drawCrosshair('#f00'); return; }
         
         const obj = valid[0];
         const [x, y, w, h] = obj.bbox;
         let cx = x + w/2, cy = y + h/2;
-        if (isMirrored) cx = CANVAS_WIDTH - cx;
+        if (isMirrored) cx = CANVAS_WIDTH - cx; // Компенсация зеркала для координат
         
         const ex = cx - CANVAS_WIDTH/2, ey = cy - CANVAS_HEIGHT/2;
+        
+        // Отрисовка на канвасе (внутренние координаты 320×240)
         ctx.strokeStyle = '#0f0'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
         ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI*2); ctx.fillStyle = '#0f0'; ctx.fill();
         drawCrosshair('#0f0');
@@ -257,6 +349,7 @@
       if (vid?.srcObject) vid.srcObject.getTracks().forEach(t => t.stop());
       if (mqtt?.isConnected()) mqtt.disconnect();
       ui.btnStart.classList.remove('hidden'); ui.btnStop.classList.add('hidden'); ui.stats.classList.add('hidden');
+      ui.resLabel.classList.add('hidden');
       ctx.fillStyle = '#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
       ctx.fillStyle = '#666'; ctx.font = '16px monospace'; ctx.textAlign = 'center';
       ctx.fillText('Остановлено', canvas.width/2, canvas.height/2); ctx.textAlign = 'left';
