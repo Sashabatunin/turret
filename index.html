@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Турель: автоматическое слежение (локальная модель)</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: monospace;
+            background: #000;
+            color: #fff;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            width: 100%;
+            background: #111;
+            border-radius: 12px;
+            padding: 20px;
+        }
+        h1 { text-align: center; font-size: 1.8rem; margin-bottom: 20px; font-weight: normal; }
+        .dashboard { display: flex; flex-wrap: wrap; gap: 20px; }
+        .video-panel {
+            flex: 3; min-width: 280px; background: #1a1a1a; border-radius: 12px;
+            padding: 10px; position: relative;
+        }
+        .video-container {
+            position: relative; background: #000; border-radius: 8px;
+            overflow: hidden; aspect-ratio: 16 / 9;
+        }
+        video, canvas {
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%; object-fit: cover;
+        }
+        canvas { pointer-events: none; }
+        .status-bar {
+            margin-top: 10px; display: flex; justify-content: space-between;
+            font-size: 0.8rem; background: #222; padding: 5px 8px; border-radius: 6px;
+        }
+        .control-panel {
+            flex: 2; min-width: 260px; background: #1a1a1a; border-radius: 12px;
+            padding: 15px; display: flex; flex-direction: column; gap: 15px;
+        }
+        .settings {
+            background: #222; border-radius: 10px; padding: 10px;
+        }
+        .settings input {
+            width: 100%; padding: 6px; margin: 4px 0 8px; border-radius: 5px;
+            border: 1px solid #444; background: #333; color: #fff;
+            font-family: monospace;
+        }
+        .settings button {
+            width: 100%; padding: 6px; background: #2c3e50; border: none;
+            border-radius: 5px; cursor: pointer; color: white;
+        }
+        .mode-switch { display: flex; gap: 10px; }
+        .mode-btn {
+            flex: 1; padding: 8px; font-size: 1rem; border: 1px solid #555;
+            border-radius: 6px; background: #2c3e50; color: white; cursor: pointer;
+        }
+        .mode-btn.active { background: #5d6d7e; border-color: #aaa; }
+        .slider-group {
+            background: #222; padding: 10px; border-radius: 10px;
+        }
+        .slider-group label { display: block; margin-bottom: 5px; }
+        input[type="range"] { width: 100%; }
+        .angle-values { display: flex; justify-content: space-between; font-size: 0.8rem; margin-top: 4px; }
+        .action-buttons { display: flex; gap: 10px; }
+        .action-buttons button {
+            flex: 1; padding: 8px; background: #2c3e50; border: 1px solid #555;
+            border-radius: 6px; cursor: pointer; color: white;
+        }
+        .telemetry {
+            background: #222; border-radius: 10px; padding: 8px;
+            font-size: 0.8rem; font-family: monospace;
+        }
+        .log {
+            background: #111; border-radius: 10px; padding: 8px;
+            max-height: 150px; overflow-y: auto; font-size: 0.7rem;
+            font-family: monospace; border: 1px solid #333;
+        }
+        .log-entry { border-bottom: 1px solid #2c3e50; padding: 2px 0; }
+        .online { color: #0f0; }
+        .offline { color: #f00; }
+        button:hover { filter: brightness(1.1); }
+        .retry-btn { background: #5d6d7e; margin-top: 8px; }
+        @media (max-width: 800px) { .dashboard { flex-direction: column; } }
+    </style>
+    <!-- MQTT-клиент (можно оставить с CDN, он безопасен) -->
+    <script src="https://unpkg.com/mqtt@5.0.0/dist/mqtt.min.js"></script>
+    <!-- Импорт локальной face-api как ES-модуль -->
+    <script type="importmap">
+        {
+            "imports": {
+                "@vladmandic/face-api": "./face-api/dist/face-api.esm.js"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as faceapi from '@vladmandic/face-api';
+
+        // ---------- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ----------
+        let mqttClient = null;
+        let currentMode = "manual";
+        let modelsLoaded = false;
+        let detectionRunning = false;
+        let isDetecting = false;
+        let lastAutoCmdTime = 0;
+        const AUTO_INTERVAL_MS = 200;
+        let currentTargetAz = 90, currentTargetEl = 90;
+        let videoElem, overlayCanvas, ctx;
+        let videoStream = null;
+        let isUserInteracting = false;
+        let lastManualSend = 0;
+        const MANUAL_THROTTLE_MS = 150;
+
+        let optionsSSDMobileNet;
+        const minScore = 0.3;
+        const maxResults = 3;
+
+        // DOM элементы
+        const azSlider = document.getElementById('azSlider');
+        const elSlider = document.getElementById('elSlider');
+        const speedSlider = document.getElementById('speedSlider');
+        const azVal = document.getElementById('azVal');
+        const elVal = document.getElementById('elVal');
+        const speedVal = document.getElementById('speedVal');
+        const curAzSpan = document.getElementById('curAz');
+        const curElSpan = document.getElementById('curEl');
+        const tgtAzSpan = document.getElementById('tgtAz');
+        const tgtElSpan = document.getElementById('tgtEl');
+        const devStatusSpan = document.getElementById('devStatus');
+        const mqttStatusSpan = document.getElementById('mqttStatus');
+        const modeLabel = document.getElementById('modeLabel');
+        const faceStatusSpan = document.getElementById('faceStatus');
+        const logPanel = document.getElementById('logPanel');
+        const brokerUrlInput = document.getElementById('brokerUrl');
+        const mqttUserInput = document.getElementById('mqttUser');
+        const mqttPassInput = document.getElementById('mqttPass');
+        const applyBtn = document.getElementById('applyBtn');
+        const manualBtn = document.getElementById('manualBtn');
+        const autoBtn = document.getElementById('autoBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const homeBtn = document.getElementById('homeBtn');
+        const retryModelsBtn = document.getElementById('retryModelsBtn');
+
+        // ---------- ЛОГ ----------
+        function addLog(msg) {
+            console.log(msg);
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logPanel.appendChild(entry);
+            entry.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            while (logPanel.children.length > 50) logPanel.removeChild(logPanel.firstChild);
+        }
+
+        // ---------- MQTT ----------
+        function saveMqttSettings() {
+            const settings = {
+                brokerUrl: brokerUrlInput.value,
+                username: mqttUserInput.value,
+                password: mqttPassInput.value
+            };
+            localStorage.setItem('mqtt_turret', JSON.stringify(settings));
+        }
+
+        function loadMqttSettings() {
+            const saved = localStorage.getItem('mqtt_turret');
+            if (saved) {
+                try {
+                    const s = JSON.parse(saved);
+                    if (s.brokerUrl) brokerUrlInput.value = s.brokerUrl;
+                    if (s.username) mqttUserInput.value = s.username;
+                    if (s.password) mqttPassInput.value = s.password;
+                    addLog("Загружены сохранённые настройки MQTT");
+                } catch(e) {}
+            }
+        }
+
+        function disconnectMqtt() {
+            if (mqttClient) {
+                mqttClient.end(true);
+                mqttClient = null;
+            }
+            mqttStatusSpan.className = "offline";
+            mqttStatusSpan.innerText = "OFFLINE";
+        }
+
+        function connectMqtt() {
+            disconnectMqtt();
+            let broker = brokerUrlInput.value.trim();
+            if (!broker) { addLog("Введите URL брокера"); return; }
+
+            // Коррекция протокола для HTTPS-страниц
+            if (location.protocol === 'https:' && broker.startsWith('ws://')) {
+                broker = broker.replace('ws://', 'wss://');
+                addLog("Заменён ws:// на wss:// из-за HTTPS");
+            }
+            if (!broker.startsWith('ws://') && !broker.startsWith('wss://')) {
+                broker = 'wss://' + broker;
+                addLog("Добавлен протокол wss://");
+            }
+
+            addLog(`Подключение к MQTT: ${broker}`);
+            const options = {
+                username: mqttUserInput.value.trim(),
+                password: mqttPassInput.value.trim(),
+                clean: true,
+                reconnectPeriod: 5000,
+                connectTimeout: 30000,
+                clientId: "web_turret_" + Math.random().toString(36).substr(2, 8)
+            };
+            mqttClient = mqtt.connect(broker, options);
+            mqttClient.on('connect', () => {
+                addLog("MQTT подключен");
+                mqttStatusSpan.className = "online";
+                mqttStatusSpan.innerText = "ONLINE";
+                mqttClient.subscribe("turret/telemetry", (err) => {
+                    if (!err) addLog("Подписан на turret/telemetry");
+                    else addLog("Ошибка подписки: " + err);
+                });
+            });
+            mqttClient.on('message', (topic, msg) => {
+                if (topic === "turret/telemetry") {
+                    try {
+                        const data = JSON.parse(msg.toString());
+                        if (data.currentAngles) {
+                            curAzSpan.innerText = data.currentAngles.azimuth ?? '?';
+                            curElSpan.innerText = data.currentAngles.elevation ?? '?';
+                        }
+                        if (data.targetAngles) {
+                            tgtAzSpan.innerText = data.targetAngles.azimuth ?? '?';
+                            tgtElSpan.innerText = data.targetAngles.elevation ?? '?';
+                            currentTargetAz = data.targetAngles.azimuth ?? currentTargetAz;
+                            currentTargetEl = data.targetAngles.elevation ?? currentTargetEl;
+                            if (currentMode === "manual" && !isUserInteracting) {
+                                azSlider.value = currentTargetAz;
+                                elSlider.value = currentTargetEl;
+                                azVal.innerText = currentTargetAz;
+                                elVal.innerText = currentTargetEl;
+                            }
+                        }
+                        if (data.status) devStatusSpan.innerText = data.status;
+                    } catch(e) {}
+                }
+            });
+            mqttClient.on('error', (err) => { addLog(`MQTT ошибка: ${err.message}`); mqttStatusSpan.className = "offline"; mqttStatusSpan.innerText = "ОШИБКА"; });
+            mqttClient.on('close', () => { addLog("MQTT разорван"); mqttStatusSpan.className = "offline"; mqttStatusSpan.innerText = "OFFLINE"; });
+        }
+
+        function sendCommand(type, targetAngles = null, speed = null) {
+            if (!mqttClient || !mqttClient.connected) { addLog("MQTT не подключён, команда не отправлена"); return false; }
+            let cmd = { type: type, timestamp: Math.floor(Date.now()/1000) };
+            if (type === "move") {
+                if (!targetAngles) return false;
+                cmd.targetAngles = targetAngles;
+                cmd.speed = (speed !== null) ? speed : parseInt(speedSlider.value);
+            }
+            const payload = JSON.stringify(cmd);
+            mqttClient.publish("turret/cmd", payload, { qos: 0 });
+            addLog(`CMD: ${type} ${targetAngles ? JSON.stringify(targetAngles) : ''} sp=${cmd.speed || '-'}`);
+            return true;
+        }
+
+        function onManualMove() {
+            if (currentMode !== "manual") return;
+            const now = Date.now();
+            if (now - lastManualSend < MANUAL_THROTTLE_MS) return;
+            lastManualSend = now;
+            const az = parseInt(azSlider.value);
+            const el = parseInt(elSlider.value);
+            const sp = parseInt(speedSlider.value);
+            sendCommand("move", { azimuth: az, elevation: el }, sp);
+        }
+
+        // ---------- ЗАГРУЗКА МОДЕЛЕЙ (ЛОКАЛЬНО) ----------
+        async function initFaceAPI(retries = 3) {
+            // Локальный путь к папке model (лежит внутри /face-api/model/)
+            const modelPath = '/face-api/model/';
+            for (let i = 0; i < retries; i++) {
+                try {
+                    addLog(`Загрузка моделей (попытка ${i+1}) из ${modelPath}...`);
+                    await faceapi.nets.ssdMobilenetv1.loadFromUri(modelPath);
+                    await faceapi.nets.ageGenderNet.loadFromUri(modelPath);
+                    await faceapi.nets.faceLandmark68Net.loadFromUri(modelPath);
+                    await faceapi.nets.faceExpressionNet.loadFromUri(modelPath);
+                    optionsSSDMobileNet = new faceapi.SsdMobilenetv1Options({ minConfidence: minScore, maxResults });
+                    addLog("Модели успешно загружены локально");
+                    modelsLoaded = true;
+                    retryModelsBtn.style.display = "none";
+                    return;
+                } catch (err) {
+                    addLog(`Ошибка загрузки моделей: ${err.message}`);
+                    if (i === retries-1) {
+                        modelsLoaded = false;
+                        retryModelsBtn.style.display = "block";
+                        addLog("Не удалось загрузить модели. Убедитесь, что папка /face-api/model/ существует и содержит все файлы.");
+                    }
+                    await new Promise(r => setTimeout(r, 2000));
+                }
+            }
+        }
+
+        async function startVideo() {
+            videoElem = document.getElementById('video');
+            overlayCanvas = document.getElementById('overlayCanvas');
+            ctx = overlayCanvas.getContext('2d');
+            if (!navigator.mediaDevices) { addLog("MediaDevices не поддерживается"); return; }
+            try {
+                const constraints = { video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } };
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                videoStream = stream;
+                videoElem.srcObject = stream;
+                await videoElem.play();
+                addLog("Камера запущена");
+                const resizeCanvas = () => {
+                    overlayCanvas.width = videoElem.videoWidth;
+                    overlayCanvas.height = videoElem.videoHeight;
+                };
+                videoElem.addEventListener('loadedmetadata', resizeCanvas);
+                resizeCanvas();
+                detectionRunning = true;
+                requestAnimationFrame(detectLoop);
+            } catch(e) {
+                addLog("Ошибка доступа к камере: " + e.message);
+            }
+        }
+
+        async function detectLoop() {
+            if (!detectionRunning) return;
+            if (!videoElem || videoElem.paused || videoElem.readyState !== 4 || !modelsLoaded) {
+                requestAnimationFrame(detectLoop);
+                return;
+            }
+            if (isDetecting) {
+                requestAnimationFrame(detectLoop);
+                return;
+            }
+            isDetecting = true;
+            try {
+                const result = await faceapi.detectAllFaces(videoElem, optionsSSDMobileNet)
+                    .withFaceLandmarks()
+                    .withFaceExpressions()
+                    .withAgeAndGender();
+                if (ctx && overlayCanvas) {
+                    ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                    if (result && result.length > 0) {
+                        const person = result[0];
+                        const box = person.detection.box;
+                        const confidence = person.detection.score;
+                        faceStatusSpan.innerHTML = `лицо (${(confidence*100).toFixed(0)}%)`;
+                        ctx.lineWidth = 2;
+                        ctx.strokeStyle = "#88ffcc";
+                        ctx.fillStyle = "transparent";
+                        ctx.beginPath();
+                        ctx.rect(box.x, box.y, box.width, box.height);
+                        ctx.stroke();
+                        ctx.font = "12px monospace";
+                        ctx.fillStyle = "#88ffcc";
+                        ctx.fillText(`face ${(confidence*100).toFixed(0)}%`, box.x, box.y-3);
+
+                        if (currentMode === "auto" && mqttClient && mqttClient.connected) {
+                            const centerX = videoElem.videoWidth / 2;
+                            const faceCenterX = box.x + box.width / 2;
+                            const offsetX = faceCenterX - centerX;
+                            const centerY = videoElem.videoHeight / 2;
+                            const faceCenterY = box.y + box.height / 2;
+                            const offsetY = faceCenterY - centerY;
+                            const maxStep = 20;
+                            let deltaAz = 0, deltaEl = 0;
+                            if (Math.abs(offsetX) > 15) {
+                                deltaAz = Math.min(maxStep, Math.max(-maxStep, offsetX / (videoElem.videoWidth/2) * maxStep));
+                            }
+                            if (Math.abs(offsetY) > 15) {
+                                deltaEl = Math.min(maxStep, Math.max(-maxStep, offsetY / (videoElem.videoHeight/2) * maxStep));
+                            }
+                            const now = Date.now();
+                            if ((deltaAz !== 0 || deltaEl !== 0) && (now - lastAutoCmdTime) >= AUTO_INTERVAL_MS) {
+                                let newAz = currentTargetAz + deltaAz;
+                                let newEl = currentTargetEl + deltaEl;
+                                newAz = Math.min(180, Math.max(0, newAz));
+                                newEl = Math.min(180, Math.max(0, newEl));
+                                sendCommand("move", { azimuth: Math.round(newAz), elevation: Math.round(newEl) }, parseInt(speedSlider.value));
+                                lastAutoCmdTime = now;
+                                currentTargetAz = newAz;
+                                currentTargetEl = newEl;
+                            }
+                        }
+                    } else {
+                        faceStatusSpan.innerHTML = "нет лица";
+                    }
+                }
+            } catch(err) {
+                // игнорируем ошибки детекции
+            } finally {
+                isDetecting = false;
+                setTimeout(() => requestAnimationFrame(detectLoop), 50);
+            }
+        }
+
+        // ---------- UI ----------
+        function initUI() {
+            azSlider.addEventListener('input', () => {
+                azVal.innerText = azSlider.value;
+                if (currentMode === "manual") onManualMove();
+            });
+            elSlider.addEventListener('input', () => {
+                elVal.innerText = elSlider.value;
+                if (currentMode === "manual") onManualMove();
+            });
+            speedSlider.addEventListener('input', () => {
+                speedVal.innerText = speedSlider.value;
+                if (currentMode === "manual") onManualMove();
+            });
+
+            azSlider.addEventListener('mousedown', () => isUserInteracting = true);
+            azSlider.addEventListener('mouseup', () => isUserInteracting = false);
+            elSlider.addEventListener('mousedown', () => isUserInteracting = true);
+            elSlider.addEventListener('mouseup', () => isUserInteracting = false);
+
+            manualBtn.addEventListener('click', () => {
+                currentMode = "manual";
+                modeLabel.innerText = "Ручной";
+                manualBtn.classList.add('active');
+                autoBtn.classList.remove('active');
+                addLog("Режим: Ручной");
+            });
+            autoBtn.addEventListener('click', () => {
+                currentMode = "auto";
+                modeLabel.innerText = "Автоматический";
+                autoBtn.classList.add('active');
+                manualBtn.classList.remove('active');
+                addLog("Режим: Автослежение");
+            });
+            stopBtn.addEventListener('click', () => sendCommand("stop"));
+            homeBtn.addEventListener('click', () => {
+                sendCommand("calibrate");
+                if (currentMode === "manual") {
+                    azSlider.value = 0; elSlider.value = 0;
+                    azVal.innerText = "0"; elVal.innerText = "0";
+                    onManualMove();
+                }
+            });
+            applyBtn.addEventListener('click', () => {
+                saveMqttSettings();
+                connectMqtt();
+            });
+            retryModelsBtn.addEventListener('click', async () => {
+                retryModelsBtn.style.display = "none";
+                await initFaceAPI(3);
+                if (!modelsLoaded) retryModelsBtn.style.display = "block";
+            });
+
+            brokerUrlInput.addEventListener('change', saveMqttSettings);
+            mqttUserInput.addEventListener('change', saveMqttSettings);
+            mqttPassInput.addEventListener('change', saveMqttSettings);
+        }
+
+        window.addEventListener('beforeunload', () => {
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+            }
+            if (mqttClient) {
+                mqttClient.end(true);
+            }
+        });
+
+        async function main() {
+            loadMqttSettings();
+            initUI();
+            if (brokerUrlInput.value) connectMqtt();
+            else addLog("Введите URL брокера MQTT и нажмите 'Применить'");
+            await initFaceAPI(3);
+            await startVideo();
+        }
+        window.onload = main;
+    </script>
+</head>
+<body>
+<div class="container">
+    <h1>Турель: автоматическое слежение (локальная модель)</h1>
+    <div class="dashboard">
+        <div class="video-panel">
+            <div class="video-container">
+                <video id="video" autoplay muted playsinline></video>
+                <canvas id="overlayCanvas"></canvas>
+            </div>
+            <div class="status-bar">
+                <span>MQTT: <span id="mqttStatus" class="offline">OFFLINE</span></span>
+                <span>Режим: <strong id="modeLabel">Ручной</strong></span>
+                <span>Лицо: <span id="faceStatus">—</span></span>
+            </div>
+        </div>
+
+        <div class="control-panel">
+            <div class="settings">
+                <h3 style="margin:0 0 6px 0">MQTT настройки</h3>
+                <input type="text" id="brokerUrl" placeholder="wss://..." value="wss://367d7905056a451cac7755db6f5bcc81.s1.eu.hivemq.cloud:8084/mqtt">
+                <input type="text" id="mqttUser" placeholder="Логин" value="johner">
+                <input type="password" id="mqttPass" placeholder="Пароль" value="John000111">
+                <button id="applyBtn">Применить и подключиться</button>
+            </div>
+
+            <div class="mode-switch">
+                <button id="manualBtn" class="mode-btn active">Ручной</button>
+                <button id="autoBtn" class="mode-btn">Автослежение</button>
+            </div>
+
+            <div class="slider-group">
+                <label>Азимут (0-180)</label>
+                <input type="range" id="azSlider" min="0" max="180" step="1" value="90">
+                <div class="angle-values"><span>0</span><span id="azVal">90</span><span>180</span></div>
+            </div>
+            <div class="slider-group">
+                <label>Угол места (0-180)</label>
+                <input type="range" id="elSlider" min="0" max="180" step="1" value="90">
+                <div class="angle-values"><span>0</span><span id="elVal">90</span><span>180</span></div>
+            </div>
+            <div class="slider-group">
+                <label>Скорость (1-100%)</label>
+                <input type="range" id="speedSlider" min="1" max="100" step="1" value="70">
+                <div class="angle-values"><span>1</span><span id="speedVal">70</span><span>100</span></div>
+            </div>
+
+            <div class="action-buttons">
+                <button id="stopBtn">STOP</button>
+                <button id="homeBtn">HOME (0,0)</button>
+            </div>
+
+            <div class="telemetry">
+                <div>Азимут: <span id="curAz">—</span> (цель <span id="tgtAz">—</span>)</div>
+                <div>Угол места: <span id="curEl">—</span> (цель <span id="tgtEl">—</span>)</div>
+                <div>Статус устройства: <span id="devStatus">—</span></div>
+            </div>
+
+            <div class="log" id="logPanel">
+                <div class="log-entry">Система запущена. Загрузка локальных моделей...</div>
+            </div>
+            <button id="retryModelsBtn" class="retry-btn" style="display:none;">Повторить загрузку моделей</button>
+        </div>
+    </div>
+</div>
+</body>
+</html>
