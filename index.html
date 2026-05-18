@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Webcam Face Tracking</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background: #1a1a2e;
+      font-family: sans-serif;
+    }
+    #video-container {
+      position: relative;
+    }
+    video, canvas {
+      border-radius: 10px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    .controls {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(255,255,255,0.9);
+      padding: 15px;
+      border-radius: 8px;
+    }
+    .controls label {
+      display: block;
+      margin: 5px 0;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <label><input type="checkbox" id="box-switch" checked> Bounding Box</label>
+    <label><input type="checkbox" id="landmarks-switch" checked> Landmarks</label>
+    <label><input type="checkbox" id="expression-switch"> Expressions</label>
+    <label><input type="checkbox" id="age-gender-switch"> Age/Gender</label>
+  </div>
+  
+  <div id="video-container">
+    <video id="video" width="720" height="560" autoplay muted></video>
+  </div>
+
+  <script src="js/face-api.min.js"></script>
+  <script src="js/script.js"></script>
+</body>
+</html>
