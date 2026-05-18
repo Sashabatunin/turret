@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Face Tracking с face-api.js</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>🎭 Трекинг лица</h1>
+    
+    <div id="loading">Загрузка моделей... <span id="progress">0%</span></div>
+    
+    <div id="webcam-container" class="hidden">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="canvas"></canvas>
+    </div>
+    
+    <div class="controls">
+      <label>
+        <input type="checkbox" id="showBoxes" checked />
+        Показывать рамки
+      </label>
+      <label>
+        <input type="checkbox" id="showLandmarks" checked />
+        Показывать точки лица
+      </label>
+      <button id="startBtn">🔴 Запустить камеру</button>
+      <button id="stopBtn" disabled>⏹ Остановить</button>
+    </div>
+    
+    <div id="error" class="error"></div>
+  </div>
+
+  <script src="js/face-api.min.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
