@@ -1,82 +1,57 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Face Tracking</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Webcam Face Tracking</title>
   <style>
     body {
       margin: 0;
-      padding: 20px;
-      background: #0f0f23;
-      color: white;
-      font-family: system-ui, sans-serif;
+      padding: 0;
       display: flex;
-      flex-direction: column;
+      justify-content: center;
       align-items: center;
       min-height: 100vh;
+      background: #1a1a2e;
+      font-family: sans-serif;
     }
     #video-container {
       position: relative;
-      margin: 20px auto;
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-      background: #000;
     }
     video, canvas {
-      display: block;
-      max-width: 100%;
-      height: auto;
+      border-radius: 10px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
     }
     canvas {
       position: absolute;
       top: 0;
       left: 0;
     }
-    #start-btn {
-      padding: 14px 32px;
-      font-size: 18px;
-      background: #4f46e5;
-      color: white;
-      border: none;
+    .controls {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(255,255,255,0.9);
+      padding: 15px;
       border-radius: 8px;
+    }
+    .controls label {
+      display: block;
+      margin: 5px 0;
       cursor: pointer;
-      transition: background 0.2s;
     }
-    #start-btn:hover { background: #4338ca; }
-    #start-btn:disabled { 
-      background: #6b7280; 
-      cursor: not-allowed;
-    }
-    #status {
-      margin: 10px 0;
-      padding: 10px 16px;
-      background: rgba(255,255,255,0.1);
-      border-radius: 6px;
-      min-height: 24px;
-    }
-    .error { color: #f87171; }
-    .success { color: #4ade80; }
   </style>
 </head>
 <body>
-  <h1>🎭 Face Tracking</h1>
-  
-  <div id="status">Загрузка моделей...</div>
-  
-  <button id="start-btn" disabled>▶️ Запустить камеру</button>
+  <div class="controls">
+    <label><input type="checkbox" id="box-switch" checked> Bounding Box</label>
+    <label><input type="checkbox" id="landmarks-switch" checked> Landmarks</label>
+    <label><input type="checkbox" id="expression-switch"> Expressions</label>
+    <label><input type="checkbox" id="age-gender-switch"> Age/Gender</label>
+  </div>
   
   <div id="video-container">
-    <!-- 🔑 Ключевые атрибуты для видео -->
-    <video 
-      id="video" 
-      width="720" 
-      height="560" 
-      autoplay 
-      muted 
-      playsinline
-    ></video>
+    <video id="video" width="720" height="560" autoplay muted></video>
   </div>
 
   <script src="js/face-api.min.js"></script>
