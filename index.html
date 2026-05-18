@@ -5,20 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>СУ макетом автоматической турели</title>
     <link rel="stylesheet" href="style.css">
-    <script src="https://unpkg.com/paho-mqtt@1.1.0/mqttws31.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <!-- Надежные CDN с defer для неблокирующей загрузки -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.1.0/paho-mqtt.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js" defer></script>
+    <script src="script.js" defer></script>
 </head>
 <body>
     <div id="connection-screen">
         <h1>Подключение к системе</h1>
-        <form id="connect-form">
-            <label>MQTT Брокер (ws:// или wss://): <input type="text" id="broker-url" value="ws://broker.hivemq.com:8000/mqtt" required></label>
+        <form id="connect-form" novalidate>
+            <label>MQTT Брокер (ws:// или wss://): 
+                <input type="text" id="broker-url" value="ws://broker.hivemq.com:8000/mqtt" required>
+            </label>
             <label>Логин: <input type="text" id="username" placeholder="admin (опционально)"></label>
             <label>Пароль: <input type="password" id="password"></label>
-            <button type="submit">Подключиться</button>
+            <button type="submit" id="connect-btn">Подключиться</button>
         </form>
         <p id="connection-status">Ожидание ввода данных...</p>
-        <small style="color:#888; display:block; margin-top:10px; text-align:center;">⚠️ Для работы камеры откройте сайт через localhost или HTTPS</small>
+        <div id="js-error" class="hidden" style="color:#ff6b6b; margin-top:10px; font-size:0.85rem;"></div>
+        <small style="color:#888; display:block; margin-top:10px; text-align:center;">⚠️ Откройте сайт через <code>http://localhost</code> или <code>https://</code></small>
     </div>
 
     <div id="dashboard" class="hidden">
@@ -72,7 +77,5 @@
             </section>
         </main>
     </div>
-
-    <script src="script.js"></script>
 </body>
 </html>
