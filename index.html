@@ -5,21 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>СУ макетом автоматической турели</title>
     <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/paho-mqtt@1.1.0/mqttws31.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 </head>
 <body>
-    <!-- Экран подключения -->
     <div id="connection-screen">
         <h1>Подключение к системе</h1>
         <form id="connect-form">
-            <label>MQTT Брокер (ws://): <input type="text" id="broker-url" value="ws://broker.hivemq.com:8000/mqtt" required></label>
+            <label>MQTT Брокер (ws:// или wss://): <input type="text" id="broker-url" value="ws://broker.hivemq.com:8000/mqtt" required></label>
             <label>Логин: <input type="text" id="username" placeholder="admin (опционально)"></label>
             <label>Пароль: <input type="password" id="password"></label>
             <button type="submit">Подключиться</button>
         </form>
         <p id="connection-status">Ожидание ввода данных...</p>
+        <small style="color:#888; display:block; margin-top:10px; text-align:center;">⚠️ Для работы камеры откройте сайт через localhost или HTTPS</small>
     </div>
 
-    <!-- Основной дашборд -->
     <div id="dashboard" class="hidden">
         <header>
             <div id="header-status">OFFLINE</div>
@@ -72,9 +73,6 @@
         </main>
     </div>
 
-    <!-- Подключение библиотек -->
-    <script src="https://unpkg.com/paho-mqtt@1.1.0/mqttws31.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

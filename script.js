@@ -31,7 +31,10 @@ let mqttClient = null;
 let isAutoMode = false;
 let faceApiLoaded = false;
 let detectionInterval = null;
-let trackingDeadzone = 0.02; // ~2% от центра кадра
+let trackingDeadzone = 0.03; // ~3% от центра кадра
+let lastCommandTime = 0;
+const COMMAND_THROTTLE = 350; // Защита от спама брокера
+let reconnectTimeout = null;
 
 // === Utils ===
 function log(msg, type = 'info') {
@@ -40,7 +43,7 @@ function log(msg, type = 'info') {
     const time = new Date().toLocaleTimeString();
     entry.textContent = `[${time}] ${msg}`;
     eventLog.prepend(entry);
-    if (eventLog.children.length > 100) eventLog.lastChild.remove();
+    if (eventLog.children.length > 150) eventLog.lastChild.remove();
 }
 clearLogBtn.addEventListener('click', () => eventLog.innerHTML = '');
 
@@ -56,43 +59,58 @@ connectForm.addEventListener('submit', async (e) => {
     log('Инициализация MQTT-клиента...');
     try {
         const url = new URL(rawUrl);
+        const isSecure = url.protocol === 'wss:';
+        const port = Number(url.port) || (isSecure ? 443 : 80);
+        const path = url.pathname || '/';
         const clientId = 'web_turret_' + Math.random().toString(36).substr(2, 9);
-        mqttClient = new Paho.MQTT.Client(url.hostname, Number(url.port), url.pathname, clientId);
+
+        mqttClient = new Paho.MQTT.Client(url.hostname, port, path, clientId);
 
         mqttClient.onConnectionLost = (resp) => {
             log('Связь потеряна: ' + resp.errorMessage, 'error');
             headerStatus.textContent = 'OFFLINE';
             headerStatus.classList.remove('online');
+            // Автопереподключение
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            reconnectTimeout = setTimeout(() => {
+                log('Попытка переподключения...', 'info');
+                connect({ host: url.hostname, port, path, useSSL: isSecure, user, pass, clientId });
+            }, 5000);
         };
 
         mqttClient.onMessageArrived = handleIncomingMessage;
-
-        mqttClient.connect({
-            onSuccess: () => {
-                mqttClient.subscribe('turret/telemetry', { qos: 1 });
-                mqttClient.subscribe('cv/status', { qos: 1 });
-                
-                headerStatus.textContent = 'ONLINE';
-                headerStatus.classList.add('online');
-                headerBroker.textContent = rawUrl;
-                connectionScreen.classList.add('hidden');
-                dashboard.classList.remove('hidden');
-                log('Успешно подключено к брокеру.', 'success');
-                initCameraAndCV();
-            },
-            onFailure: (err) => {
-                log('Ошибка подключения: ' + err.errorMessage, 'error');
-            },
-            userName: user || undefined,
-            password: pass || undefined,
-            useSSL: false,
-            keepAliveInterval: 30,
-            cleanSession: true
-        });
+        
+        connect({ host: url.hostname, port, path, useSSL: isSecure, user, pass, clientId });
     } catch (err) {
         log('Неверный формат URL. Используйте ws://адрес:порт/путь', 'error');
     }
 });
+
+function connect(opts) {
+    mqttClient.connect({
+        onSuccess: () => {
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            mqttClient.subscribe('turret/telemetry', { qos: 1 });
+            mqttClient.subscribe('cv/status', { qos: 1 });
+            
+            headerStatus.textContent = 'ONLINE';
+            headerStatus.classList.add('online');
+            headerBroker.textContent = opts.host + ':' + opts.port;
+            connectionScreen.classList.add('hidden');
+            dashboard.classList.remove('hidden');
+            log('Успешно подключено к брокеру.', 'success');
+            initCameraAndCV();
+        },
+        onFailure: (err) => {
+            log('Ошибка подключения: ' + err.errorMessage, 'error');
+        },
+        userName: opts.user || undefined,
+        password: opts.pass || undefined,
+        useSSL: opts.useSSL,
+        keepAliveInterval: 30,
+        cleanSession: true
+    });
+}
 
 logoutBtn.addEventListener('click', () => {
     if (mqttClient?.isConnected()) mqttClient.disconnect();
@@ -107,15 +125,18 @@ logoutBtn.addEventListener('click', () => {
 // === Camera & Face API ===
 async function initCameraAndCV() {
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: "user" } });
         video.srcObject = stream;
         await new Promise(res => video.onloadedmetadata = res);
+        
+        // Фикс: ждём пока видео не будет готово к отрисовке
+        await video.play();
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
 
         cvLoading.classList.remove('hidden');
         log('Загрузка моделей SSD MobileNetV1...');
-        // ВНИМАНИЕ: Для работы требуется локальная папка /models с файлами весов face-api.js
+        // Важно: сервер должен отдавать папку /models с правильными MIME-типами
         await faceapi.nets.ssdMobilenetv1.loadFromUri('/models');
         await faceapi.nets.faceLandmark68Net.loadFromUri('/models');
         
@@ -125,28 +146,27 @@ async function initCameraAndCV() {
         startDetectionLoop();
     } catch (err) {
         log('Ошибка камеры/CV: ' + err.message, 'error');
-        cvLoading.textContent = '❌ Доступ к камере или моделям запрещён.';
+        cvLoading.textContent = '❌ Доступ к камере или моделям запрещён. Проверьте HTTPS/localhost.';
     }
 }
 
 function startDetectionLoop() {
     detectionInterval = setInterval(async () => {
-        if (!faceApiLoaded || video.paused || video.readyState < 2) return;
+        if (!faceApiLoaded || video.paused || video.readyState < 4) return;
         
-        const detection = await faceapi.detectSingleFace(video, new faceapi.SsdMobilenetv1Options()).withFaceLandmarks();
+        const detection = await faceapi.detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.4 })).withFaceLandmarks();
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         if (detection) {
             const { box, confidence } = detection.detection;
             const { x, y, width, height } = box;
             
-            // Отрисовка bounding box
             ctx.strokeStyle = '#00ff88';
-            ctx.lineWidth = 3;
+            ctx.lineWidth = 2;
             ctx.strokeRect(x, y, width, height);
             ctx.fillStyle = '#00ff88';
-            ctx.font = 'bold 16px sans-serif';
-            ctx.fillText(`Conf: ${(confidence * 100).toFixed(1)}%`, x, y - 8);
+            ctx.font = 'bold 14px sans-serif';
+            ctx.fillText(`Conf: ${(confidence * 100).toFixed(1)}%`, x, y - 5);
 
             telConf.textContent = (confidence * 100).toFixed(1);
 
@@ -154,33 +174,34 @@ function startDetectionLoop() {
         } else {
             telConf.textContent = '0.0';
         }
-    }, 200); // ~5 FPS для стабильности в браузере
+    }, 200);
 }
 
-// === Auto Tracking Logic ===
+// === Auto Tracking Logic (с троттлингом) ===
 function performAutoTracking(boxX, boxY, boxW, boxH) {
+    const now = Date.now();
+    if (now - lastCommandTime < COMMAND_THROTTLE) return;
+
     const centerX = boxX + boxW / 2;
     const centerY = boxY + boxH / 2;
-    
-    // Нормализованное смещение от центра (-0.5 до 0.5)
     const offsetX = (centerX - canvas.width / 2) / canvas.width;
     const offsetY = (centerY - canvas.height / 2) / canvas.height;
 
     if (Math.abs(offsetX) < trackingDeadzone && Math.abs(offsetY) < trackingDeadzone) return;
 
+    lastCommandTime = now;
     const speed = parseInt(speedSlider.value) / 100;
-    const maxStep = 25; // Максимальный шаг за тик (градусы)
+    const maxStep = 20; 
     
     const currentAz = parseFloat(azimuthSlider.value);
     const currentEl = parseFloat(elevationSlider.value);
 
     const newAz = clamp(currentAz + (offsetX * maxStep * speed), 0, 180);
-    const newEl = clamp(currentEl + (-offsetY * maxStep * speed), 0, 180); // Инверсия Y
+    const newEl = clamp(currentEl + (-offsetY * maxStep * speed), 0, 180);
 
+    // Обновляем UI без триггера 'change'
     azimuthSlider.value = newAz.toFixed(1);
     elevationSlider.value = newEl.toFixed(1);
-    
-    // Обновляем UI значения
     document.getElementById('azimuth-val').textContent = newAz.toFixed(1);
     document.getElementById('elevation-val').textContent = newEl.toFixed(1);
 
@@ -194,6 +215,7 @@ modeRadios.forEach(r => r.addEventListener('change', (e) => {
     manual.style.opacity = isAutoMode ? '0.4' : '1';
     manual.style.pointerEvents = isAutoMode ? 'none' : 'auto';
     log(`Режим: ${isAutoMode ? 'АВТОНАВЕДЕНИЕ' : 'РУЧНОЕ УПРАВЛЕНИЕ'}`, 'info');
+    if (isAutoMode) sendCommand('mode_auto');
 }));
 
 [azimuthSlider, elevationSlider, speedSlider].forEach(el => {
@@ -230,7 +252,7 @@ function sendCommand(type, az = null, el = null, spd = null) {
     const msg = new Paho.MQTT.Message(JSON.stringify(payload));
     msg.destinationName = 'turret/cmd';
     mqttClient.send(msg);
-    log(`➤ Команда: ${type} | Az: ${payload.targetAngles?.azimuth} El: ${payload.targetAngles?.elevation} Spd: ${payload.speed}%`);
+    log(`➤ Команда: ${type} | Az: ${payload.targetAngles?.azimuth ?? '-'} El: ${payload.targetAngles?.elevation ?? '-'} Spd: ${payload.speed ?? '-'}%`);
 }
 
 function handleIncomingMessage(message) {
@@ -239,12 +261,12 @@ function handleIncomingMessage(message) {
     try { payload = JSON.parse(message.payloadString); } catch { return; }
 
     if (topic === 'turret/telemetry') {
-        telAz.textContent = payload.currentAngles?.azimuth?.toFixed(1) || '-';
-        telEl.textContent = payload.currentAngles?.elevation?.toFixed(1) || '-';
-        targetAz.textContent = payload.targetAngles?.azimuth?.toFixed(1) || '-';
-        targetEl.textContent = payload.targetAngles?.elevation?.toFixed(1) || '-';
+        telAz.textContent = payload.currentAngles?.azimuth?.toFixed(1) ?? '-';
+        telEl.textContent = payload.currentAngles?.elevation?.toFixed(1) ?? '-';
+        targetAz.textContent = payload.targetAngles?.azimuth?.toFixed(1) ?? '-';
+        targetEl.textContent = payload.targetAngles?.elevation?.toFixed(1) ?? '-';
         telStatus.textContent = payload.status || 'OK';
     } else if (topic === 'cv/status') {
-        telConf.textContent = (payload.confidence * 100).toFixed(1) || '-';
+        telConf.textContent = (payload.confidence * 100).toFixed(1) ?? '-';
     }
 }
